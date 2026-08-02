@@ -2,16 +2,13 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>InstaCrop & Edit</title>
     
     <!-- Google Fonts for modern typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    
-    <!-- Cropper.js CSS -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" rel="stylesheet">
     
     <!-- Custom Styles -->
     <link rel="stylesheet" href="style.css">
@@ -50,8 +47,16 @@
                 <button class="btn primary-btn" id="btn-export">保存</button>
             </div>
             
-            <div class="cropper-container">
-                <img id="image-workspace" src="" alt="編集用画像">
+            <div class="cropper-container" id="cropper-container">
+                <img id="image-workspace" src="" alt="編集用画像" draggable="false">
+                <div id="crop-overlay" class="crop-overlay">
+                    <div id="crop-box" class="crop-box">
+                        <div class="handle handle-nw" data-dir="nw"></div>
+                        <div class="handle handle-ne" data-dir="ne"></div>
+                        <div class="handle handle-sw" data-dir="sw"></div>
+                        <div class="handle handle-se" data-dir="se"></div>
+                    </div>
+                </div>
             </div>
 
             <div class="controls-panel">
@@ -67,8 +72,6 @@
         </div>
     </div>
 
-    <!-- Cropper.js Script -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
     <!-- Custom Script -->
     <script src="main.js"></script>
 </body>

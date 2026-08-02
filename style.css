@@ -18,20 +18,29 @@
     padding: 0;
 }
 
+/* Prevent all scrolling */
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    position: fixed;
+    overscroll-behavior: none;
+    touch-action: none;
+}
+
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--bg-color);
     color: var(--text-primary);
     display: flex;
     justify-content: center;
-    min-height: 100vh;
     -webkit-font-smoothing: antialiased;
 }
 
 .app-container {
     width: 100%;
     max-width: 600px;
-    height: 100vh;
+    height: 100%;
     display: flex;
     flex-direction: column;
     position: relative;
@@ -124,13 +133,18 @@ body {
     box-shadow: var(--shadow-sm);
 }
 
-.primary-btn:hover {
+.primary-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.primary-btn:not(:disabled):hover {
     transform: translateY(-1px);
     box-shadow: var(--shadow-md);
     opacity: 0.9;
 }
 
-.primary-btn:active {
+.primary-btn:not(:disabled):active {
     transform: translateY(0);
 }
 
@@ -155,6 +169,7 @@ body {
     justify-content: space-between;
     padding: 16px 20px;
     border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
 }
 
 .editor-header .title {
@@ -162,30 +177,100 @@ body {
     margin: 0;
 }
 
+/* Custom Cropper Styles */
 .cropper-container {
     flex: 1;
     width: 100%;
-    background-color: #e5e5e5; /* Slightly dark background for contrast with image */
+    background-color: #111;
     position: relative;
     overflow: hidden;
-    touch-action: none; /* スマホでのスワイプ時に画面全体がスクロールするのを防ぐ */
+    user-select: none;
+    -webkit-user-select: none;
 }
 
-/* Override cropper styling for clean look */
-.cropper-view-box, .cropper-face {
-    border-radius: 0;
+#image-workspace {
+    position: absolute;
+    transform-origin: top left;
+    pointer-events: none; /* Let overlay handle all touches */
+    will-change: transform, filter;
 }
-.cropper-point {
-    background-color: var(--bg-color);
-    width: 8px;
-    height: 8px;
+
+.crop-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
+    /* Box shadow is drawn in JS to create darkened area around crop-box */
+}
+
+.crop-box {
+    position: absolute;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    box-sizing: border-box;
+    cursor: move;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+}
+
+/* Grid Lines inside crop box */
+.crop-box::before, .crop-box::after {
+    content: '';
+    position: absolute;
+    background: rgba(255, 255, 255, 0.4);
+}
+.crop-box::before {
+    top: 33.33%;
+    bottom: 33.33%;
+    left: 0;
+    right: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.4);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+    background: transparent;
+}
+.crop-box::after {
+    left: 33.33%;
+    right: 33.33%;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.4);
+    border-right: 1px solid rgba(255, 255, 255, 0.4);
+    background: transparent;
+}
+
+.handle {
+    position: absolute;
+    width: 44px;
+    height: 44px;
+    background-color: transparent;
+    z-index: 10;
+}
+
+/* Corner indicators visually smaller, touch area large */
+.handle::after {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background-color: #fff;
     border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
-.cropper-line {
-    background-color: rgba(255, 255, 255, 0.5);
-}
+
+.handle-nw { top: -22px; left: -22px; cursor: nwse-resize; }
+.handle-nw::after { top: 16px; left: 16px; }
+
+.handle-ne { top: -22px; right: -22px; cursor: nesw-resize; }
+.handle-ne::after { top: 16px; right: 16px; }
+
+.handle-sw { bottom: -22px; left: -22px; cursor: nesw-resize; }
+.handle-sw::after { bottom: 16px; left: 16px; }
+
+.handle-se { bottom: -22px; right: -22px; cursor: nwse-resize; }
+.handle-se::after { bottom: 16px; right: 16px; }
 
 .controls-panel {
+    flex-shrink: 0;
     padding: 24px 20px;
     border-top: 1px solid var(--border-color);
     background-color: var(--bg-color);
@@ -221,8 +306,8 @@ body {
 .slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     background: var(--primary-color);
     cursor: pointer;
@@ -230,21 +315,13 @@ body {
     transition: var(--transition);
 }
 
-.slider::-webkit-slider-thumb:hover {
-    transform: scale(1.1);
-}
-
 .slider::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     background: var(--primary-color);
     cursor: pointer;
     border: none;
     box-shadow: 0 0 0 4px rgba(0,0,0,0.05);
     transition: var(--transition);
-}
-
-.slider::-moz-range-thumb:hover {
-    transform: scale(1.1);
 }
