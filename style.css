@@ -25,7 +25,6 @@ html, body {
     overflow: hidden;
     position: fixed;
     overscroll-behavior: none;
-    touch-action: none;
 }
 
 body {
@@ -111,7 +110,12 @@ body {
 }
 
 .file-input {
-    display: none;
+    width: 0.1px;
+    height: 0.1px;
+    opacity: 0;
+    overflow: hidden;
+    position: absolute;
+    z-index: -1;
 }
 
 /* Buttons */
@@ -186,6 +190,7 @@ body {
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
+    touch-action: none;
 }
 
 #image-workspace {
