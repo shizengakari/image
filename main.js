@@ -2,21 +2,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Elements ---
     const uploadView = document.getElementById('upload-view');
     const editorView = document.getElementById('editor-view');
+    const resultView = document.getElementById('result-view');
     const completeView = document.getElementById('complete-view');
     
+    const btnTriggerUpload = document.getElementById('btn-trigger-upload');
     const imageUpload = document.getElementById('image-upload');
     const imageWorkspace = document.getElementById('image-workspace');
     const container = document.getElementById('cropper-container');
     const cropBoxEl = document.getElementById('crop-box');
     
     const btnBack = document.getElementById('btn-back');
-    const btnExport = document.getElementById('btn-export');
+    const btnProcess = document.getElementById('btn-process');
+    const btnNextImage = document.getElementById('btn-next-image');
     const btnRestart = document.getElementById('btn-restart');
     
     const progressIndicator = document.getElementById('progress-indicator');
     const brightnessSlider = document.getElementById('brightness-slider');
     const brightnessVal = document.getElementById('brightness-val');
-    const toast = document.getElementById('toast');
+    const resultImage = document.getElementById('result-image');
 
     // --- Queue State ---
     let imageFiles = [];
@@ -24,7 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Cropper State ---
     const ASPECT_RATIO = 4 / 5;
-    let currentFileName = 'edited_image.jpg';
     let imageNaturalWidth = 0;
     let imageNaturalHeight = 0;
     
@@ -40,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- View Navigation ---
     const showView = (viewEl) => {
-        [uploadView, editorView, completeView].forEach(v => v.classList.remove('active'));
+        [uploadView, editorView, resultView, completeView].forEach(v => v.classList.remove('active'));
         viewEl.classList.add('active');
     };
 
@@ -52,12 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
         imageWorkspace.src = '';
         brightnessSlider.value = 100;
         updateBrightnessUI(100);
-    };
-
-    const showToast = (message) => {
-        toast.textContent = message;
-        toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 2000);
     };
 
     // --- Brightness Logic ---
@@ -72,27 +68,29 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- File Upload & Loading ---
+    btnTriggerUpload.addEventListener('click', () => {
+        imageUpload.click();
+    });
+
     const loadCurrentImage = () => {
         const file = imageFiles[currentFileIndex];
         if (!file) return;
-
-        const nameParts = file.name.split('.');
-        nameParts.pop();
-        currentFileName = `${nameParts.join('.')}_4x5.jpg`;
 
         // Update UI
         if (imageFiles.length > 1) {
             progressIndicator.textContent = `${currentFileIndex + 1} / ${imageFiles.length}`;
             progressIndicator.style.display = 'block';
-            btnExport.textContent = currentFileIndex < imageFiles.length - 1 ? '次へ' : '完了';
+            btnNextImage.textContent = currentFileIndex < imageFiles.length - 1 ? '次の画像へ' : '完了';
         } else {
             progressIndicator.style.display = 'none';
-            btnExport.textContent = '保存';
+            btnNextImage.textContent = '完了';
         }
 
         // Reset state
         brightnessSlider.value = 100;
         updateBrightnessUI(100);
+        btnProcess.textContent = '次へ';
+        btnProcess.disabled = false;
 
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -288,10 +286,9 @@ document.addEventListener('DOMContentLoaded', () => {
     btnBack.addEventListener('click', resetApp);
     btnRestart.addEventListener('click', resetApp);
 
-    btnExport.addEventListener('click', () => {
-        const originalText = btnExport.textContent;
-        btnExport.textContent = '処理中...';
-        btnExport.disabled = true;
+    btnProcess.addEventListener('click', () => {
+        btnProcess.textContent = '処理中...';
+        btnProcess.disabled = true;
 
         setTimeout(() => {
             const scale = imageNaturalWidth / imgRect.w;
@@ -313,31 +310,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 0, 0, cropW, cropH
             );
 
-            finalCanvas.toBlob((blob) => {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = currentFileName;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-
-                btnExport.textContent = originalText;
-                btnExport.disabled = false;
-                
-                showToast('保存しました');
-
-                setTimeout(() => {
-                    if (currentFileIndex < imageFiles.length - 1) {
-                        currentFileIndex++;
-                        loadCurrentImage();
-                    } else {
-                        showView(completeView);
-                    }
-                }, 400);
-
-            }, 'image/jpeg', 0.9);
+            // Directly show the image in the Result View instead of triggering a generic download
+            resultImage.src = finalCanvas.toDataURL('image/jpeg', 0.9);
+            showView(resultView);
+            
         }, 50);
+    });
+
+    btnNextImage.addEventListener('click', () => {
+        if (currentFileIndex < imageFiles.length - 1) {
+            currentFileIndex++;
+            showView(editorView);
+            loadCurrentImage();
+        } else {
+            showView(completeView);
+        }
     });
 });

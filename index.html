@@ -31,10 +31,9 @@
                     <h1 class="title">画像を選択</h1>
                     <p class="subtitle">複数枚の画像も一括で4:5に最適化できます</p>
                     
-                    <div class="upload-btn-wrapper">
-                        <button class="btn primary-btn btn-large">写真を選ぶ</button>
-                        <input type="file" id="image-upload" accept="image/*" class="file-input" multiple>
-                    </div>
+                    <!-- Simple proxy button for upload -->
+                    <input type="file" id="image-upload" accept="image/*" class="file-input" multiple>
+                    <button class="btn primary-btn btn-large" id="btn-trigger-upload">写真を選ぶ</button>
                 </div>
             </div>
         </div>
@@ -49,7 +48,7 @@
                     </svg>
                 </button>
                 <div class="progress-pill" id="progress-indicator">1 / 1</div>
-                <button class="btn primary-btn" id="btn-export">保存</button>
+                <button class="btn primary-btn" id="btn-process">次へ</button>
             </div>
             
             <div class="cropper-container" id="cropper-container">
@@ -76,9 +75,22 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- Toast notification for save success -->
-            <div id="toast" class="toast">保存しました</div>
+        </div>
+
+        <!-- Result View (For saving) -->
+        <div id="result-view" class="view">
+            <div class="header-simple">
+                <h2>完成した画像</h2>
+            </div>
+            <div class="result-content">
+                <p class="help-text">画像を<strong>長押し</strong>（PCは右クリック）して保存してください</p>
+                <div class="result-image-container">
+                    <img id="result-image" src="" alt="完成画像">
+                </div>
+                <div class="result-actions">
+                    <button class="btn primary-btn btn-large" id="btn-next-image">次の画像へ</button>
+                </div>
+            </div>
         </div>
 
         <!-- Complete State -->
@@ -90,9 +102,8 @@
                         <polyline points="22 4 12 14.01 9 11.01"></polyline>
                     </svg>
                 </div>
-                <h1 class="title">すべての保存が完了しました！</h1>
-                <p class="subtitle">画像は端末のダウンロードフォルダに保存されています。</p>
-                <button class="btn primary-btn btn-large" id="btn-restart">新しく画像を選ぶ</button>
+                <h1 class="title">すべての編集が完了しました！</h1>
+                <button class="btn primary-btn btn-large" id="btn-restart" style="margin-top: 24px;">新しく画像を選ぶ</button>
             </div>
         </div>
 
