@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InstaCrop & Edit</title>
+    
+    <!-- Google Fonts for modern typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Cropper.js CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" rel="stylesheet">
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Upload State -->
+        <div id="upload-view" class="view active">
+            <div class="upload-card">
+                <div class="upload-icon">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                        <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                </div>
+                <h1 class="title">画像を選択</h1>
+                <p class="subtitle">Instagram用(4:5)に最適化</p>
+                <input type="file" id="image-upload" accept="image/*" class="file-input">
+                <button class="btn primary-btn" onclick="document.getElementById('image-upload').click()">
+                    アップロード
+                </button>
+            </div>
+        </div>
+
+        <!-- Editor State -->
+        <div id="editor-view" class="view">
+            <div class="editor-header">
+                <button class="btn icon-btn" id="btn-back">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </button>
+                <h2 class="title">編集</h2>
+                <button class="btn primary-btn" id="btn-export">保存</button>
+            </div>
+            
+            <div class="cropper-container">
+                <img id="image-workspace" src="" alt="編集用画像">
+            </div>
+
+            <div class="controls-panel">
+                <div class="control-group">
+                    <div class="control-header">
+                        <label for="brightness-slider">明るさ</label>
+                        <span id="brightness-val">0</span>
+                    </div>
+                    <!-- Range: 0 to 200, default 100 -->
+                    <input type="range" id="brightness-slider" min="0" max="200" value="100" class="slider">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cropper.js Script -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+    <!-- Custom Script -->
+    <script src="main.js"></script>
+</body>
+</html>
