@@ -27,7 +27,7 @@
                 </div>
                 <h1 class="title">画像を選択</h1>
                 <p class="subtitle">Instagram用(4:5)に最適化</p>
-                <input type="file" id="image-upload" accept="image/*" class="file-input">
+                <input type="file" id="image-upload" accept="image/*" class="file-input" multiple>
                 <button class="btn primary-btn" onclick="document.getElementById('image-upload').click()">
                     アップロード
                 </button>
@@ -43,7 +43,7 @@
                         <polyline points="12 19 5 12 12 5"></polyline>
                     </svg>
                 </button>
-                <h2 class="title">編集</h2>
+                <h2 class="title" id="editor-title">編集</h2>
                 <button class="btn primary-btn" id="btn-export">保存</button>
             </div>
             

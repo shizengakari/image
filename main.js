@@ -9,8 +9,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const btnBack = document.getElementById('btn-back');
     const btnExport = document.getElementById('btn-export');
+    const editorTitle = document.getElementById('editor-title');
     const brightnessSlider = document.getElementById('brightness-slider');
     const brightnessVal = document.getElementById('brightness-val');
+
+    // --- Queue State ---
+    let imageFiles = [];
+    let currentFileIndex = 0;
 
     // --- State ---
     const ASPECT_RATIO = 4 / 5;
@@ -55,14 +60,27 @@ document.addEventListener('DOMContentLoaded', () => {
         updateBrightnessUI(e.target.value);
     });
 
-    // --- File Upload ---
-    imageUpload.addEventListener('change', (e) => {
-        const file = e.target.files[0];
+    // --- File Upload & Loading ---
+    const loadCurrentImage = () => {
+        const file = imageFiles[currentFileIndex];
         if (!file) return;
 
         const nameParts = file.name.split('.');
         nameParts.pop();
         currentFileName = `${nameParts.join('.')}_4x5.jpg`;
+
+        // Update UI
+        if (imageFiles.length > 1) {
+            editorTitle.textContent = `編集 (${currentFileIndex + 1}/${imageFiles.length})`;
+            btnExport.textContent = currentFileIndex < imageFiles.length - 1 ? '次へ' : '保存';
+        } else {
+            editorTitle.textContent = '編集';
+            btnExport.textContent = '保存';
+        }
+
+        // Reset state
+        brightnessSlider.value = 100;
+        updateBrightnessUI(100);
 
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -70,11 +88,21 @@ document.addEventListener('DOMContentLoaded', () => {
             imageWorkspace.onload = () => {
                 imageNaturalWidth = imageWorkspace.naturalWidth;
                 imageNaturalHeight = imageWorkspace.naturalHeight;
-                showEditor();
                 initCustomCropper();
             };
         };
         reader.readAsDataURL(file);
+    };
+
+    imageUpload.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+        
+        imageFiles = files;
+        currentFileIndex = 0;
+        
+        showEditor();
+        loadCurrentImage();
     });
 
     // --- Custom Cropper Logic ---
@@ -300,10 +328,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
 
-                btnExport.textContent = originalText;
+                btnExport.textContent = imageFiles.length > 1 && currentFileIndex < imageFiles.length - 1 ? '次へ' : '保存';
                 btnExport.disabled = false;
                 btnExport.style.cursor = 'pointer';
                 btnExport.style.opacity = '1';
+
+                // Process next image if available
+                if (currentFileIndex < imageFiles.length - 1) {
+                    currentFileIndex++;
+                    loadCurrentImage();
+                } else {
+                    // We finished all images, optionally go back to upload screen
+                    // showUpload();
+                }
             }, 'image/jpeg', 0.9);
         }, 50);
     });
