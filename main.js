@@ -78,7 +78,8 @@ document.addEventListener('DOMContentLoaded', () => {
         cropper = new Cropper(imageWorkspace, {
             aspectRatio: 4 / 5,
             viewMode: 1, // Restrict crop box not to exceed size of canvas
-            dragMode: 'move', // Allow moving the image inside the cropper
+            dragMode: 'none', // 画像自体が動くのを防ぎ、枠だけを動かせるようにする
+            zoomable: false, // ズームによる位置ズレを防ぐ
             autoCropArea: 1,
             restore: false,
             guides: true,
@@ -100,34 +101,57 @@ document.addEventListener('DOMContentLoaded', () => {
     btnExport.addEventListener('click', () => {
         if (!cropper) return;
 
-        // Get the cropped canvas
-        const croppedCanvas = cropper.getCroppedCanvas({
-            imageSmoothingEnabled: true,
-            imageSmoothingQuality: 'high',
-        });
+        // ボタンを処理中状態にする
+        const originalText = btnExport.textContent;
+        btnExport.textContent = '処理中...';
+        btnExport.disabled = true;
+        btnExport.style.cursor = 'wait';
+        btnExport.style.opacity = '0.7';
 
-        if (!croppedCanvas) return;
+        // UIの更新（再描画）を待ってから重い処理を開始する
+        setTimeout(() => {
+            // Get the cropped canvas
+            const croppedCanvas = cropper.getCroppedCanvas({
+                imageSmoothingEnabled: true,
+                imageSmoothingQuality: 'high',
+            });
 
-        // Apply brightness to the final image
-        const finalCanvas = document.createElement('canvas');
-        finalCanvas.width = croppedCanvas.width;
-        finalCanvas.height = croppedCanvas.height;
-        const ctx = finalCanvas.getContext('2d');
+            if (!croppedCanvas) {
+                // 失敗時の復旧
+                btnExport.textContent = originalText;
+                btnExport.disabled = false;
+                btnExport.style.cursor = 'pointer';
+                btnExport.style.opacity = '1';
+                return;
+            }
 
-        const brightness = brightnessSlider.value;
-        ctx.filter = `brightness(${brightness}%)`;
-        ctx.drawImage(croppedCanvas, 0, 0);
+            // Apply brightness to the final image
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = croppedCanvas.width;
+            finalCanvas.height = croppedCanvas.height;
+            const ctx = finalCanvas.getContext('2d');
 
-        // Convert to blob and download
-        finalCanvas.toBlob((blob) => {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = currentFileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }, 'image/jpeg', 0.9);
+            const brightness = brightnessSlider.value;
+            ctx.filter = `brightness(${brightness}%)`;
+            ctx.drawImage(croppedCanvas, 0, 0);
+
+            // Convert to blob and download
+            finalCanvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = currentFileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                // ボタンの状態を元に戻す
+                btnExport.textContent = originalText;
+                btnExport.disabled = false;
+                btnExport.style.cursor = 'pointer';
+                btnExport.style.opacity = '1';
+            }, 'image/jpeg', 0.9);
+        }, 50); // 50msの遅延を入れてUIを描画させる
     });
 });
