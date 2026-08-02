@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>InstaCrop & Edit</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +31,6 @@
                     <h1 class="title">画像を選択</h1>
                     <p class="subtitle">複数枚の画像も一括で4:5に最適化できます</p>
                     
-                    <!-- Simple proxy button for upload -->
                     <input type="file" id="image-upload" accept="image/*" class="file-input" multiple>
                     <button class="btn primary-btn btn-large" id="btn-trigger-upload">写真を選ぶ</button>
                 </div>
@@ -64,14 +63,41 @@
             </div>
 
             <div class="controls-panel glass">
-                <div class="control-group">
-                    <div class="control-header">
-                        <label for="brightness-slider">明るさ</label>
-                        <span id="brightness-val" class="value-badge">0</span>
-                    </div>
-                    <div class="slider-wrapper">
-                        <svg class="slider-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                <div class="sliders-scroll">
+                    <!-- Brightness -->
+                    <div class="control-group">
+                        <div class="control-header">
+                            <div class="control-label">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                                <span>明るさ</span>
+                            </div>
+                            <span id="brightness-val" class="value-badge">0</span>
+                        </div>
                         <input type="range" id="brightness-slider" min="0" max="200" value="100" class="slider">
+                    </div>
+                    
+                    <!-- Contrast -->
+                    <div class="control-group">
+                        <div class="control-header">
+                            <div class="control-label">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0 0 20z"></path></svg>
+                                <span>コントラスト</span>
+                            </div>
+                            <span id="contrast-val" class="value-badge">0</span>
+                        </div>
+                        <input type="range" id="contrast-slider" min="0" max="200" value="100" class="slider">
+                    </div>
+
+                    <!-- Saturation -->
+                    <div class="control-group">
+                        <div class="control-header">
+                            <div class="control-label">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>
+                                <span>あざやかさ</span>
+                            </div>
+                            <span id="saturation-val" class="value-badge">0</span>
+                        </div>
+                        <input type="range" id="saturation-slider" min="0" max="200" value="100" class="slider">
                     </div>
                 </div>
             </div>
@@ -79,9 +105,17 @@
 
         <!-- Result View (For saving) -->
         <div id="result-view" class="view">
-            <div class="header-simple">
-                <h2>完成した画像</h2>
+            <div class="editor-header glass">
+                <button class="btn icon-btn" id="btn-result-back" aria-label="戻る">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </button>
+                <div class="progress-pill">完成画像</div>
+                <div style="width: 44px;"></div> <!-- Spacer for flex balance -->
             </div>
+            
             <div class="result-content">
                 <p class="help-text">画像を<strong>長押し</strong>（PCは右クリック）して保存してください</p>
                 <div class="result-image-container">

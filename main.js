@@ -12,13 +12,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const cropBoxEl = document.getElementById('crop-box');
     
     const btnBack = document.getElementById('btn-back');
+    const btnResultBack = document.getElementById('btn-result-back');
     const btnProcess = document.getElementById('btn-process');
     const btnNextImage = document.getElementById('btn-next-image');
     const btnRestart = document.getElementById('btn-restart');
     
     const progressIndicator = document.getElementById('progress-indicator');
+    
     const brightnessSlider = document.getElementById('brightness-slider');
     const brightnessVal = document.getElementById('brightness-val');
+    
+    const contrastSlider = document.getElementById('contrast-slider');
+    const contrastVal = document.getElementById('contrast-val');
+    
+    const saturationSlider = document.getElementById('saturation-slider');
+    const saturationVal = document.getElementById('saturation-val');
+    
     const resultImage = document.getElementById('result-image');
 
     // --- Queue State ---
@@ -52,20 +61,37 @@ document.addEventListener('DOMContentLoaded', () => {
         imageFiles = [];
         currentFileIndex = 0;
         imageWorkspace.src = '';
+        resetFilters();
+    };
+
+    // --- Filter Logic ---
+    const resetFilters = () => {
         brightnessSlider.value = 100;
-        updateBrightnessUI(100);
+        contrastSlider.value = 100;
+        saturationSlider.value = 100;
+        updateFilters();
     };
 
-    // --- Brightness Logic ---
-    const updateBrightnessUI = (val) => {
-        const displayVal = val - 100;
-        brightnessVal.textContent = displayVal > 0 ? `+${displayVal}` : displayVal;
-        imageWorkspace.style.filter = `brightness(${val}%)`;
+    const formatDisplayValue = (val) => {
+        const diff = val - 100;
+        return diff > 0 ? `+${diff}` : diff;
     };
 
-    brightnessSlider.addEventListener('input', (e) => {
-        updateBrightnessUI(e.target.value);
-    });
+    const updateFilters = () => {
+        const b = brightnessSlider.value;
+        const c = contrastSlider.value;
+        const s = saturationSlider.value;
+        
+        brightnessVal.textContent = formatDisplayValue(b);
+        contrastVal.textContent = formatDisplayValue(c);
+        saturationVal.textContent = formatDisplayValue(s);
+        
+        imageWorkspace.style.filter = `brightness(${b}%) contrast(${c}%) saturate(${s}%)`;
+    };
+
+    brightnessSlider.addEventListener('input', updateFilters);
+    contrastSlider.addEventListener('input', updateFilters);
+    saturationSlider.addEventListener('input', updateFilters);
 
     // --- File Upload & Loading ---
     btnTriggerUpload.addEventListener('click', () => {
@@ -87,8 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Reset state
-        brightnessSlider.value = 100;
-        updateBrightnessUI(100);
+        resetFilters();
         btnProcess.textContent = '次へ';
         btnProcess.disabled = false;
 
@@ -285,6 +310,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Actions ---
     btnBack.addEventListener('click', resetApp);
     btnRestart.addEventListener('click', resetApp);
+    
+    // Allows going back to re-edit the current image from the result view
+    btnResultBack.addEventListener('click', () => {
+        showView(editorView);
+        btnProcess.textContent = '次へ';
+        btnProcess.disabled = false;
+    });
 
     btnProcess.addEventListener('click', () => {
         btnProcess.textContent = '処理中...';
@@ -302,7 +334,10 @@ document.addEventListener('DOMContentLoaded', () => {
             finalCanvas.height = cropH;
             const ctx = finalCanvas.getContext('2d');
 
-            ctx.filter = `brightness(${brightnessSlider.value}%)`;
+            const b = brightnessSlider.value;
+            const c = contrastSlider.value;
+            const s = saturationSlider.value;
+            ctx.filter = `brightness(${b}%) contrast(${c}%) saturate(${s}%)`;
             
             ctx.drawImage(
                 imageWorkspace,
@@ -310,7 +345,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 0, 0, cropW, cropH
             );
 
-            // Directly show the image in the Result View instead of triggering a generic download
             resultImage.src = finalCanvas.toDataURL('image/jpeg', 0.9);
             showView(resultView);
             
