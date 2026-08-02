@@ -80,6 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
             viewMode: 1, // Restrict crop box not to exceed size of canvas
             dragMode: 'none', // 画像自体が動くのを防ぎ、枠だけを動かせるようにする
             zoomable: false, // ズームによる位置ズレを防ぐ
+            movable: false, // 画像の移動を完全に無効化
+            rotatable: false, // 回転を無効化
+            scalable: false, // スケール変更を無効化
             autoCropArea: 1,
             restore: false,
             guides: true,

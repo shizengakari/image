@@ -168,6 +168,7 @@ body {
     background-color: #e5e5e5; /* Slightly dark background for contrast with image */
     position: relative;
     overflow: hidden;
+    touch-action: none; /* スマホでのスワイプ時に画面全体がスクロールするのを防ぐ */
 }
 
 /* Override cropper styling for clean look */
