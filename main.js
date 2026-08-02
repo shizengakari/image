@@ -2,6 +2,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Elements ---
     const uploadView = document.getElementById('upload-view');
     const editorView = document.getElementById('editor-view');
+    const completeView = document.getElementById('complete-view');
+    
     const imageUpload = document.getElementById('image-upload');
     const imageWorkspace = document.getElementById('image-workspace');
     const container = document.getElementById('cropper-container');
@@ -9,44 +11,53 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const btnBack = document.getElementById('btn-back');
     const btnExport = document.getElementById('btn-export');
-    const editorTitle = document.getElementById('editor-title');
+    const btnRestart = document.getElementById('btn-restart');
+    
+    const progressIndicator = document.getElementById('progress-indicator');
     const brightnessSlider = document.getElementById('brightness-slider');
     const brightnessVal = document.getElementById('brightness-val');
+    const toast = document.getElementById('toast');
 
     // --- Queue State ---
     let imageFiles = [];
     let currentFileIndex = 0;
 
-    // --- State ---
+    // --- Cropper State ---
     const ASPECT_RATIO = 4 / 5;
     let currentFileName = 'edited_image.jpg';
     let imageNaturalWidth = 0;
     let imageNaturalHeight = 0;
     
-    // Geometry
-    let imgRect = { x: 0, y: 0, w: 0, h: 0 }; // Image rendered size and position
-    let cropBox = { x: 0, y: 0, w: 0, h: 0 }; // Crop box size and position relative to container
+    let imgRect = { x: 0, y: 0, w: 0, h: 0 }; 
+    let cropBox = { x: 0, y: 0, w: 0, h: 0 }; 
 
     // Interaction State
     let isDragging = false;
-    let dragType = null; // 'move', 'nw', 'ne', 'sw', 'se'
+    let dragType = null; 
     let startX = 0;
     let startY = 0;
     let initialCropBox = null;
 
     // --- View Navigation ---
-    const showEditor = () => {
-        uploadView.classList.remove('active');
-        editorView.classList.add('active');
+    const showView = (viewEl) => {
+        [uploadView, editorView, completeView].forEach(v => v.classList.remove('active'));
+        viewEl.classList.add('active');
     };
 
-    const showUpload = () => {
-        editorView.classList.remove('active');
-        uploadView.classList.add('active');
+    const resetApp = () => {
+        showView(uploadView);
         imageUpload.value = '';
+        imageFiles = [];
+        currentFileIndex = 0;
         imageWorkspace.src = '';
         brightnessSlider.value = 100;
         updateBrightnessUI(100);
+    };
+
+    const showToast = (message) => {
+        toast.textContent = message;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2000);
     };
 
     // --- Brightness Logic ---
@@ -71,10 +82,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Update UI
         if (imageFiles.length > 1) {
-            editorTitle.textContent = `編集 (${currentFileIndex + 1}/${imageFiles.length})`;
-            btnExport.textContent = currentFileIndex < imageFiles.length - 1 ? '次へ' : '保存';
+            progressIndicator.textContent = `${currentFileIndex + 1} / ${imageFiles.length}`;
+            progressIndicator.style.display = 'block';
+            btnExport.textContent = currentFileIndex < imageFiles.length - 1 ? '次へ' : '完了';
         } else {
-            editorTitle.textContent = '編集';
+            progressIndicator.style.display = 'none';
             btnExport.textContent = '保存';
         }
 
@@ -101,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         imageFiles = files;
         currentFileIndex = 0;
         
-        showEditor();
+        showView(editorView);
         loadCurrentImage();
     });
 
@@ -110,10 +122,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const contW = container.clientWidth;
         const contH = container.clientHeight;
 
-        // Calculate image rendering size (fit within container)
         const scaleX = contW / imageNaturalWidth;
         const scaleY = contH / imageNaturalHeight;
-        const scale = Math.min(scaleX, scaleY) * 0.95; // 95% to leave a tiny margin
+        const scale = Math.min(scaleX, scaleY) * 0.95; 
 
         imgRect.w = imageNaturalWidth * scale;
         imgRect.h = imageNaturalHeight * scale;
@@ -125,7 +136,6 @@ document.addEventListener('DOMContentLoaded', () => {
         imageWorkspace.style.left = `${imgRect.x}px`;
         imageWorkspace.style.top = `${imgRect.y}px`;
 
-        // Calculate initial crop box (max 4:5 area within the image)
         const maxCropW = imgRect.w;
         const maxCropH = maxCropW / ASPECT_RATIO;
         
@@ -137,7 +147,6 @@ document.addEventListener('DOMContentLoaded', () => {
             cropBox.w = cropBox.h * ASPECT_RATIO;
         }
 
-        // Slightly smaller for better UX
         cropBox.w *= 0.9;
         cropBox.h *= 0.9;
         
@@ -160,16 +169,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const onPointerDown = (e) => {
         if (!editorView.classList.contains('active')) return;
         
-        // Prevent default browser behaviors like scrolling
         e.preventDefault(); 
         
-        // Determine drag target
         if (e.target.classList.contains('handle')) {
             dragType = e.target.getAttribute('data-dir');
         } else if (e.target.closest('#crop-box')) {
             dragType = 'move';
         } else {
-            return; // Clicked outside
+            return; 
         }
 
         isDragging = true;
@@ -192,14 +199,11 @@ document.addEventListener('DOMContentLoaded', () => {
             cropBox.x = clamp(initialCropBox.x + dx, imgRect.x, imgRect.x + imgRect.w - cropBox.w);
             cropBox.y = clamp(initialCropBox.y + dy, imgRect.y, imgRect.y + imgRect.h - cropBox.h);
         } else {
-            // Resizing logic keeping 4:5 ratio
             let newW = initialCropBox.w;
             let newH = initialCropBox.h;
             let newX = initialCropBox.x;
             let newY = initialCropBox.y;
 
-            // We use dx to drive the size change, except when dragging vertically makes more sense
-            // To make it intuitive, we calculate size change based on the axis they moved most
             let dw = 0;
             
             if (dragType === 'se') {
@@ -224,16 +228,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 newY = initialCropBox.y - (newH - initialCropBox.h);
             }
 
-            // Min size
             if (newW < 100) {
                 newW = 100;
                 newH = newW / ASPECT_RATIO;
-                // Revert positions if hit min limit
                 if (dragType === 'sw' || dragType === 'nw') newX = initialCropBox.x + initialCropBox.w - newW;
                 if (dragType === 'nw' || dragType === 'ne') newY = initialCropBox.y + initialCropBox.h - newH;
             }
 
-            // Clamp to image bounds
             if (newX < imgRect.x) {
                 const diff = imgRect.x - newX;
                 newX = imgRect.x;
@@ -273,7 +274,6 @@ document.addEventListener('DOMContentLoaded', () => {
         dragType = null;
     };
 
-    // Use touch events for mobile, mouse events for PC
     container.addEventListener('touchstart', onPointerDown, { passive: false });
     document.addEventListener('touchmove', onPointerMove, { passive: false });
     document.addEventListener('touchend', onPointerUp);
@@ -282,28 +282,24 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('mousemove', onPointerMove);
     document.addEventListener('mouseup', onPointerUp);
 
-    // Prevent default drag
     container.addEventListener('dragstart', e => e.preventDefault());
 
     // --- Actions ---
-    btnBack.addEventListener('click', showUpload);
+    btnBack.addEventListener('click', resetApp);
+    btnRestart.addEventListener('click', resetApp);
 
     btnExport.addEventListener('click', () => {
         const originalText = btnExport.textContent;
         btnExport.textContent = '処理中...';
         btnExport.disabled = true;
-        btnExport.style.cursor = 'wait';
-        btnExport.style.opacity = '0.7';
 
         setTimeout(() => {
-            // Calculate actual crop coordinates on the original image
             const scale = imageNaturalWidth / imgRect.w;
             const cropX = (cropBox.x - imgRect.x) * scale;
             const cropY = (cropBox.y - imgRect.y) * scale;
             const cropW = cropBox.w * scale;
             const cropH = cropBox.h * scale;
 
-            // Apply brightness to the final image
             const finalCanvas = document.createElement('canvas');
             finalCanvas.width = cropW;
             finalCanvas.height = cropH;
@@ -311,7 +307,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             ctx.filter = `brightness(${brightnessSlider.value}%)`;
             
-            // Draw cropped area
             ctx.drawImage(
                 imageWorkspace,
                 cropX, cropY, cropW, cropH,
@@ -328,19 +323,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
 
-                btnExport.textContent = imageFiles.length > 1 && currentFileIndex < imageFiles.length - 1 ? '次へ' : '保存';
+                btnExport.textContent = originalText;
                 btnExport.disabled = false;
-                btnExport.style.cursor = 'pointer';
-                btnExport.style.opacity = '1';
+                
+                showToast('保存しました');
 
-                // Process next image if available
-                if (currentFileIndex < imageFiles.length - 1) {
-                    currentFileIndex++;
-                    loadCurrentImage();
-                } else {
-                    // We finished all images, optionally go back to upload screen
-                    // showUpload();
-                }
+                setTimeout(() => {
+                    if (currentFileIndex < imageFiles.length - 1) {
+                        currentFileIndex++;
+                        loadCurrentImage();
+                    } else {
+                        showView(completeView);
+                    }
+                }, 400);
+
             }, 'image/jpeg', 0.9);
         }, 50);
     });
