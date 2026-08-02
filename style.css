@@ -18,28 +18,20 @@
     padding: 0;
 }
 
-/* Prevent all scrolling */
-html, body {
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    position: fixed;
-    overscroll-behavior: none;
-}
-
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--bg-color);
     color: var(--text-primary);
     display: flex;
     justify-content: center;
+    min-height: 100vh;
     -webkit-font-smoothing: antialiased;
 }
 
 .app-container {
     width: 100%;
     max-width: 600px;
-    height: 100%;
+    height: 100vh;
     display: flex;
     flex-direction: column;
     position: relative;
@@ -110,12 +102,7 @@ body {
 }
 
 .file-input {
-    width: 0.1px;
-    height: 0.1px;
-    opacity: 0;
-    overflow: hidden;
-    position: absolute;
-    z-index: -1;
+    display: none;
 }
 
 /* Buttons */
