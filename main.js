@@ -30,15 +30,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const resultImage = document.getElementById('result-image');
 
-    // --- Queue State ---
+    // --- Queue & State ---
     let imageFiles = [];
     let currentFileIndex = 0;
+    let imageStates = []; // Stores crop and filter settings for each image
 
-    // --- Cropper State ---
+    // --- Cropper Math State ---
     const ASPECT_RATIO = 4 / 5;
     let imageNaturalWidth = 0;
     let imageNaturalHeight = 0;
-    
     let imgRect = { x: 0, y: 0, w: 0, h: 0 }; 
     let cropBox = { x: 0, y: 0, w: 0, h: 0 }; 
 
@@ -60,24 +60,39 @@ document.addEventListener('DOMContentLoaded', () => {
         imageUpload.value = '';
         imageFiles = [];
         currentFileIndex = 0;
+        imageStates = [];
         imageWorkspace.src = '';
-        resetFilters();
     };
 
-    // --- Filter Logic ---
-    const resetFilters = () => {
-        brightnessSlider.value = 100;
-        contrastSlider.value = 100;
-        saturationSlider.value = 100;
-        updateFilters();
+    // --- State Management ---
+    const saveCurrentState = () => {
+        imageStates[currentFileIndex] = {
+            cropBox: { ...cropBox },
+            brightness: brightnessSlider.value,
+            contrast: contrastSlider.value,
+            saturation: saturationSlider.value,
+        };
     };
 
+    // --- Slider UI & Filter Logic ---
     const formatDisplayValue = (val) => {
         const diff = val - 100;
+        if (diff === 0) return '0';
         return diff > 0 ? `+${diff}` : diff;
     };
 
-    const updateFilters = () => {
+    const updateSliderUI = (slider) => {
+        const val = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
+        slider.style.background = `linear-gradient(to right, #111827 ${val}%, #e5e7eb ${val}%)`;
+    };
+
+    const updateAllSlidersUI = () => {
+        [brightnessSlider, contrastSlider, saturationSlider].forEach(updateSliderUI);
+    };
+
+    const updateFilters = (e) => {
+        if (e && e.target) updateSliderUI(e.target);
+
         const b = brightnessSlider.value;
         const c = contrastSlider.value;
         const s = saturationSlider.value;
@@ -89,9 +104,11 @@ document.addEventListener('DOMContentLoaded', () => {
         imageWorkspace.style.filter = `brightness(${b}%) contrast(${c}%) saturate(${s}%)`;
     };
 
-    brightnessSlider.addEventListener('input', updateFilters);
-    contrastSlider.addEventListener('input', updateFilters);
-    saturationSlider.addEventListener('input', updateFilters);
+    ['input', 'change'].forEach(evt => {
+        brightnessSlider.addEventListener(evt, updateFilters);
+        contrastSlider.addEventListener(evt, updateFilters);
+        saturationSlider.addEventListener(evt, updateFilters);
+    });
 
     // --- File Upload & Loading ---
     btnTriggerUpload.addEventListener('click', () => {
@@ -112,9 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btnNextImage.textContent = '完了';
         }
 
-        // Reset state
-        resetFilters();
-        btnProcess.textContent = '次へ';
+        btnProcess.textContent = '保存';
         btnProcess.disabled = false;
 
         const reader = new FileReader();
@@ -124,6 +139,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 imageNaturalWidth = imageWorkspace.naturalWidth;
                 imageNaturalHeight = imageWorkspace.naturalHeight;
                 initCustomCropper();
+                
+                // Restore state if it exists for this image
+                const state = imageStates[currentFileIndex];
+                if (state) {
+                    cropBox = { ...state.cropBox };
+                    brightnessSlider.value = state.brightness;
+                    contrastSlider.value = state.contrast;
+                    saturationSlider.value = state.saturation;
+                    renderCropBox();
+                } else {
+                    brightnessSlider.value = 100;
+                    contrastSlider.value = 100;
+                    saturationSlider.value = 100;
+                }
+                
+                updateFilters();
+                updateAllSlidersUI();
             };
         };
         reader.readAsDataURL(file);
@@ -135,6 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         imageFiles = files;
         currentFileIndex = 0;
+        imageStates = [];
         
         showView(editorView);
         loadCurrentImage();
@@ -188,7 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
 
-    // Pointer Events for Cropping
     const onPointerDown = (e) => {
         if (!editorView.classList.contains('active')) return;
         
@@ -228,7 +260,6 @@ document.addEventListener('DOMContentLoaded', () => {
             let newY = initialCropBox.y;
 
             let dw = 0;
-            
             if (dragType === 'se') {
                 dw = Math.max(dx, dy * ASPECT_RATIO);
                 newW = initialCropBox.w + dw;
@@ -300,25 +331,36 @@ document.addEventListener('DOMContentLoaded', () => {
     container.addEventListener('touchstart', onPointerDown, { passive: false });
     document.addEventListener('touchmove', onPointerMove, { passive: false });
     document.addEventListener('touchend', onPointerUp);
-    
     container.addEventListener('mousedown', onPointerDown);
     document.addEventListener('mousemove', onPointerMove);
     document.addEventListener('mouseup', onPointerUp);
-
     container.addEventListener('dragstart', e => e.preventDefault());
 
     // --- Actions ---
-    btnBack.addEventListener('click', resetApp);
     btnRestart.addEventListener('click', resetApp);
     
-    // Allows going back to re-edit the current image from the result view
+    // Main editor Back Button
+    btnBack.addEventListener('click', () => {
+        saveCurrentState();
+        if (currentFileIndex > 0) {
+            currentFileIndex--;
+            loadCurrentImage();
+        } else {
+            // Keep files, just hide editor (like pressing 'cancel' to upload different ones)
+            showView(uploadView);
+        }
+    });
+    
+    // Result View Back Button (Re-edit current image)
     btnResultBack.addEventListener('click', () => {
         showView(editorView);
-        btnProcess.textContent = '次へ';
+        btnProcess.textContent = '保存';
         btnProcess.disabled = false;
     });
 
+    // Process & Save
     btnProcess.addEventListener('click', () => {
+        saveCurrentState(); // Save state before moving on
         btnProcess.textContent = '処理中...';
         btnProcess.disabled = true;
 
@@ -347,7 +389,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             resultImage.src = finalCanvas.toDataURL('image/jpeg', 0.9);
             showView(resultView);
-            
         }, 50);
     });
 
