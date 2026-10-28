@@ -1299,13 +1299,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return { dataUrl, blob, filename };
     };
 
+    const handleResetWithConfirm = () => {
+        if (imageFiles.length > 0) {
+            if (window.confirm('最初の画面に戻りますか？\n（編集内容や処理結果はリセットされます）')) {
+                resetApp();
+            }
+        } else {
+            resetApp();
+        }
+    };
+
     // --- Navigation & Saving Actions ---
     btnBack.addEventListener('click', () => {
         if (currentFileIndex > 0) {
             currentFileIndex--;
             loadCurrentImage();
         } else {
-            resetApp();
+            handleResetWithConfirm();
         }
     });
 
@@ -1316,7 +1326,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (btnRestartTop) {
-        btnRestartTop.addEventListener('click', resetApp);
+        btnRestartTop.addEventListener('click', handleResetWithConfirm);
     }
 
     btnProcess.addEventListener('click', () => {
@@ -1421,5 +1431,14 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('保存しています');
     });
 
-    btnRestart.addEventListener('click', resetApp);
+    btnRestart.addEventListener('click', handleResetWithConfirm);
+
+    // --- 誤ってWebサイトを閉じないようにする確認画面 (beforeunload) ---
+    window.addEventListener('beforeunload', (event) => {
+        // 画像が読み込まれて作業中の場合、離脱確認ダイアログを表示
+        if (imageFiles && imageFiles.length > 0) {
+            event.preventDefault();
+            event.returnValue = '';
+        }
+    });
 });
