@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>InstaCrop & Edit</title>
+    <title>フォトエディター</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,13 +14,13 @@
 <body>
     <div class="app-container">
         
-        <!-- Upload State -->
+        <!-- Upload View -->
         <div id="upload-view" class="view active">
             <div class="header-simple">
-                <h2>InstaCrop</h2>
+                <h2>フォトエディター</h2>
             </div>
             <div class="upload-content">
-                <div class="upload-card">
+                <div class="upload-card" id="drop-zone">
                     <div class="upload-icon-wrapper">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -29,106 +29,478 @@
                         </svg>
                     </div>
                     <h1 class="title">画像を選択</h1>
-                    <p class="subtitle">複数枚の画像も一括で4:5に最適化できます</p>
+                    <p class="subtitle">複数枚の画像も一括で切り抜き・色調補正できます<br><span class="subtitle-sub">ドラッグ＆ドロップ・貼り付けにも対応</span></p>
                     
+                    <div class="feature-tags">
+                        <span class="feature-tag">比率・回転</span>
+                        <span class="feature-tag">12種の詳細補正</span>
+                        <span class="feature-tag">フィルター</span>
+                        <span class="feature-tag">ワンタップ保存</span>
+                    </div>
+
                     <input type="file" id="image-upload" accept="image/*" class="file-input" multiple>
-                    <button class="btn primary-btn btn-large" id="btn-trigger-upload">写真を選ぶ</button>
+                    <button type="button" class="btn primary-btn btn-large" id="btn-trigger-upload">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        写真を選ぶ
+                    </button>
                 </div>
             </div>
         </div>
 
-        <!-- Editor State -->
+        <!-- Editor View -->
         <div id="editor-view" class="view">
             <div class="editor-header glass">
-                <button class="btn icon-btn" id="btn-back" aria-label="戻る">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <button type="button" class="btn icon-btn" id="btn-back" aria-label="戻る" title="戻る">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="19" y1="12" x2="5" y2="12"></line>
                         <polyline points="12 19 5 12 12 5"></polyline>
                     </svg>
                 </button>
-                <div class="progress-pill" id="progress-indicator">1 / 1</div>
-                <button class="btn primary-btn" id="btn-process">次へ</button>
+                
+                <div class="header-center">
+                    <div class="progress-pill" id="progress-indicator">1 / 1</div>
+                    <button type="button" class="btn text-pill-btn" id="btn-apply-all" style="display: none;" title="現在の補正と比率をすべての画像に適用">
+                        一括適用
+                    </button>
+                </div>
+
+                <button type="button" class="btn primary-btn btn-sm" id="btn-process">完了</button>
             </div>
             
+            <!-- Cropper & Live Preview Workspace -->
             <div class="cropper-container" id="cropper-container">
-                <img id="image-workspace" src="" alt="編集用画像" draggable="false">
+                <canvas id="image-workspace"></canvas>
+                
                 <div id="crop-overlay" class="crop-overlay">
                     <div id="crop-box" class="crop-box">
+                        <div class="crop-grid-h"></div>
+                        <div class="crop-grid-v"></div>
+                        <!-- Corner Handles -->
                         <div class="handle handle-nw" data-dir="nw"></div>
                         <div class="handle handle-ne" data-dir="ne"></div>
                         <div class="handle handle-sw" data-dir="sw"></div>
                         <div class="handle handle-se" data-dir="se"></div>
+                        <!-- Edge Handles -->
+                        <div class="handle handle-n" data-dir="n"></div>
+                        <div class="handle handle-s" data-dir="s"></div>
+                        <div class="handle handle-e" data-dir="e"></div>
+                        <div class="handle handle-w" data-dir="w"></div>
                     </div>
+                </div>
+
+                <!-- Floating Workspace Utilities -->
+                <div class="workspace-floating-bar">
+                    <button type="button" class="floating-chip" id="btn-reset-all" style="display: none;" title="すべての編集をリセット">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                            <polyline points="3 3 3 8 8 8"></polyline>
+                        </svg>
+                        <span>リセット</span>
+                    </button>
+                    <button type="button" class="floating-chip" id="btn-compare" title="長押しで元画像と比較" aria-label="長押しで元画像と比較">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        <span>比較</span>
+                    </button>
                 </div>
             </div>
 
-            <div class="controls-panel glass">
-                <div class="sliders-scroll">
-                    <!-- Brightness -->
-                    <div class="control-group">
-                        <div class="control-header">
-                            <div class="control-label">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-                                <span>明るさ</span>
-                            </div>
-                            <span id="brightness-val" class="value-badge">0</span>
-                        </div>
-                        <input type="range" id="brightness-slider" min="0" max="200" value="100" class="slider">
-                    </div>
+            <!-- Bottom Dock: Contextual Bar (pops up when a menu item is selected) + Bottom Tool Menu -->
+            <div class="editor-bottom-dock glass">
+                
+                <!-- Contextual Active Control Panel -->
+                <div id="active-control-panel" class="active-control-panel" aria-hidden="true">
                     
-                    <!-- Contrast -->
-                    <div class="control-group">
-                        <div class="control-header">
-                            <div class="control-label">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0 0 20z"></path></svg>
-                                <span>コントラスト</span>
+                    <!-- 1. Standard Adjustment Slider Sub-Panel -->
+                    <div id="panel-slider" class="sub-panel">
+                        <div class="panel-header">
+                            <div class="panel-title-group">
+                                <span id="active-tool-name" class="panel-title">明るさ</span>
+                                <span id="active-tool-val" class="value-badge">0</span>
                             </div>
-                            <span id="contrast-val" class="value-badge">0</span>
+                            <div class="panel-actions">
+                                <button type="button" class="btn mini-btn" id="btn-reset-single" title="この項目を0に戻す">リセット</button>
+                                <button type="button" class="btn icon-close-btn" id="btn-close-slider" aria-label="バーを閉じる">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
-                        <input type="range" id="contrast-slider" min="0" max="200" value="100" class="slider">
+                        <div class="slider-wrapper">
+                            <div class="slider-track-bg">
+                                <div id="slider-fill" class="slider-fill"></div>
+                                <div id="slider-center-tick" class="slider-center-tick"></div>
+                            </div>
+                            <input type="range" id="active-slider" min="-100" max="100" value="0" step="1" class="slider">
+                        </div>
                     </div>
 
-                    <!-- Saturation -->
-                    <div class="control-group">
-                        <div class="control-header">
-                            <div class="control-label">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>
-                                <span>あざやかさ</span>
+                    <!-- 2. Aspect Ratio Sub-Panel -->
+                    <div id="panel-aspect" class="sub-panel" style="display: none;">
+                        <div class="panel-header">
+                            <div class="panel-title-group">
+                                <span class="panel-title">切り抜き比率</span>
                             </div>
-                            <span id="saturation-val" class="value-badge">0</span>
+                            <div class="panel-actions">
+                                <button type="button" class="btn icon-close-btn" id="btn-close-aspect" aria-label="バーを閉じる">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
-                        <input type="range" id="saturation-slider" min="0" max="200" value="100" class="slider">
+                        <div class="aspect-pills" id="aspect-pills">
+                            <button type="button" class="aspect-pill active" data-ratio="0.8">4:5 <small>縦長</small></button>
+                            <button type="button" class="aspect-pill" data-ratio="1">1:1 <small>正方形</small></button>
+                            <button type="button" class="aspect-pill" data-ratio="1.7777778">16:9 <small>ワイド</small></button>
+                            <button type="button" class="aspect-pill" data-ratio="0.5625">9:16 <small>縦フル</small></button>
+                            <button type="button" class="aspect-pill" data-ratio="1.3333333">4:3</button>
+                            <button type="button" class="aspect-pill" data-ratio="0.75">3:4</button>
+                            <button type="button" class="aspect-pill" data-ratio="original">元比率</button>
+                            <button type="button" class="aspect-pill" data-ratio="free">自由</button>
+                        </div>
                     </div>
+
+                    <!-- 3. Rotate / Flip / Straighten Sub-Panel -->
+                    <div id="panel-transform" class="sub-panel" style="display: none;">
+                        <div class="panel-header">
+                            <div class="panel-title-group">
+                                <span class="panel-title">回転・反転・傾き</span>
+                                <span id="straighten-val" class="value-badge">0°</span>
+                            </div>
+                            <div class="panel-actions">
+                                <button type="button" class="btn mini-btn" id="btn-reset-transform">リセット</button>
+                                <button type="button" class="btn icon-close-btn" id="btn-close-transform" aria-label="バーを閉じる">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="transform-actions-row">
+                            <button type="button" class="transform-btn" id="btn-rotate-ccw" title="左へ90°回転">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M2.5 2v6h6M2.66 15.57a10 10 0 1 0 .57-8.38"/>
+                                </svg>
+                                <span>左90°</span>
+                            </button>
+                            <button type="button" class="transform-btn" id="btn-rotate-cw" title="右へ90°回転">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
+                                </svg>
+                                <span>右90°</span>
+                            </button>
+                            <button type="button" class="transform-btn" id="btn-flip-h" title="左右反転">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m3 7 5 5-5 5V7"/><path d="m21 7-5 5 5 5V7"/><path d="M12 20v2"/><path d="M12 14v2"/><path d="M12 8v2"/><path d="M12 2v2"/>
+                                </svg>
+                                <span>左右反転</span>
+                            </button>
+                            <button type="button" class="transform-btn" id="btn-flip-v" title="上下反転">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m7 3 5 5 5-5H7"/><path d="m7 21 5-5 5 5H7"/><path d="M20 12h2"/><path d="M14 12h2"/><path d="M8 12h2"/><path d="M2 12h2"/>
+                                </svg>
+                                <span>上下反転</span>
+                            </button>
+                        </div>
+                        <div class="slider-wrapper">
+                            <div class="slider-track-bg">
+                                <div id="straighten-fill" class="slider-fill"></div>
+                                <div class="slider-center-tick"></div>
+                            </div>
+                            <input type="range" id="straighten-slider" min="-45" max="45" value="0" step="0.5" class="slider">
+                        </div>
+                    </div>
+
+                    <!-- 4. Preset Filters Sub-Panel -->
+                    <div id="panel-filters" class="sub-panel" style="display: none;">
+                        <div class="panel-header">
+                            <div class="panel-title-group">
+                                <span class="panel-title">フィルター</span>
+                                <span id="filter-strength-val" class="value-badge">100%</span>
+                            </div>
+                            <div class="panel-actions">
+                                <button type="button" class="btn icon-close-btn" id="btn-close-filters" aria-label="バーを閉じる">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="filter-pills" id="filter-pills">
+                            <button type="button" class="filter-pill active" data-filter="none">オリジナル</button>
+                            <button type="button" class="filter-pill" data-filter="vivid">クリア</button>
+                            <button type="button" class="filter-pill" data-filter="warm">ウォーム</button>
+                            <button type="button" class="filter-pill" data-filter="cool">クール</button>
+                            <button type="button" class="filter-pill" data-filter="dramatic">ドラマ</button>
+                            <button type="button" class="filter-pill" data-filter="film">フィルム</button>
+                            <button type="button" class="filter-pill" data-filter="mono">モノクロ</button>
+                            <button type="button" class="filter-pill" data-filter="sepia">セピア</button>
+                        </div>
+                        <div class="slider-wrapper" id="filter-slider-wrapper" style="display: none;">
+                            <div class="slider-track-bg">
+                                <div id="filter-fill" class="slider-fill"></div>
+                            </div>
+                            <input type="range" id="filter-strength-slider" min="0" max="100" value="100" step="1" class="slider">
+                        </div>
+                    </div>
+
                 </div>
+
+                <!-- Bottom Tool Menu Bar -->
+                <div class="tool-menu-wrapper">
+                    <button type="button" class="menu-scroll-btn menu-scroll-left" id="menu-scroll-left" aria-label="左へスクロール">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    </button>
+                    
+                    <div class="tool-menu-bar" id="tool-menu-bar" role="toolbar" aria-label="編集メニュー">
+                        <!-- Geometry & Presets -->
+                        <button type="button" class="tool-item" data-tool="aspect">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M6 2v14a2 2 0 0 0 2 2h14"></path>
+                                    <path d="M18 22V8a2 2 0 0 0-2-2H2"></path>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">比率</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="transform">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+                                    <polyline points="21 3 21 8 16 8"></polyline>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">回転・傾き</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="filters">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">フィルター</span>
+                        </button>
+
+                        <div class="tool-divider"></div>
+
+                        <!-- 12 Adjustments -->
+                        <button type="button" class="tool-item" data-tool="brightness">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="5"></circle>
+                                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">明るさ</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="exposure">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                                    <line x1="3" y1="21" x2="21" y2="3"></line>
+                                    <line x1="8" y1="6" x2="8" y2="10"></line>
+                                    <line x1="6" y1="8" x2="10" y2="8"></line>
+                                    <line x1="14" y1="16" x2="18" y2="16"></line>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">露出</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="contrast">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor"></path>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">コントラスト</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="highlights">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="9"></circle>
+                                    <path d="M12 3v18"></path>
+                                    <path d="M12 7l5 5-5 5"></path>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">ハイライト</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="shadows">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">シャドウ</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="saturation">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">あざやかさ</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="vibrance">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">自然な彩度</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="warmth">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">色温度</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="tint">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="13.5" cy="6.5" r="2.5"></circle>
+                                    <circle cx="17.5" cy="10.5" r="2.5"></circle>
+                                    <circle cx="8.5" cy="7.5" r="2.5"></circle>
+                                    <circle cx="6.5" cy="12.5" r="2.5"></circle>
+                                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">色合い</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="sharpness">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="12 2 2 22 22 22 12 2"></polygon>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">シャープ</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="fade">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                                    <path d="M3 15h18"></path>
+                                    <path d="M3 19h18"></path>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">フェード</span>
+                        </button>
+
+                        <button type="button" class="tool-item" data-tool="vignette">
+                            <div class="tool-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="2" y="2" width="20" height="20" rx="4"></rect>
+                                    <ellipse cx="12" cy="12" rx="6" ry="6"></ellipse>
+                                </svg>
+                                <span class="tool-dot"></span>
+                            </div>
+                            <span class="tool-label">ビネット</span>
+                        </button>
+                    </div>
+
+                    <button type="button" class="menu-scroll-btn menu-scroll-right" id="menu-scroll-right" aria-label="右へスクロール">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </button>
+                </div>
+
             </div>
         </div>
 
-        <!-- Result View (For saving) -->
+        <!-- Result View (For one-click saving & long-press saving) -->
         <div id="result-view" class="view">
             <div class="editor-header glass">
-                <button class="btn icon-btn" id="btn-result-back" aria-label="戻る">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <button type="button" class="btn icon-btn" id="btn-result-back" aria-label="編集に戻る" title="編集に戻る">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="19" y1="12" x2="5" y2="12"></line>
                         <polyline points="12 19 5 12 12 5"></polyline>
                     </svg>
                 </button>
-                <div class="progress-pill">完成画像</div>
-                <div style="width: 44px;"></div> <!-- Spacer for flex balance -->
+                <div class="progress-pill" id="result-title-pill">完成画像</div>
+                <div style="width: 40px;"></div>
             </div>
             
             <div class="result-content">
-                <p class="help-text">画像を<strong>長押し</strong>（PCは右クリック）して保存してください</p>
+                <div class="result-save-card">
+                    <div class="result-save-buttons">
+                        <button type="button" class="btn primary-btn btn-save-main" id="btn-download-image">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            画像を保存
+                        </button>
+                        <button type="button" class="btn secondary-btn btn-save-share" id="btn-share-image" style="display: none;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+                                <circle cx="18" cy="5" r="3"></circle>
+                                <circle cx="6" cy="12" r="3"></circle>
+                                <circle cx="18" cy="19" r="3"></circle>
+                                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                            </svg>
+                            共有・写真に保存
+                        </button>
+                    </div>
+                    <p class="help-text-sub">上のボタンでワンタップ保存、または下の画像を<strong>長押し</strong>（PCは右クリック）でも保存できます</p>
+                </div>
+
                 <div class="result-image-container">
                     <img id="result-image" src="" alt="完成画像">
                 </div>
+
                 <div class="result-actions">
-                    <button class="btn primary-btn btn-large" id="btn-next-image">次の画像へ</button>
+                    <button type="button" class="btn outline-btn btn-large" id="btn-next-image">次の画像へ</button>
                 </div>
             </div>
         </div>
 
         <!-- Complete State -->
         <div id="complete-view" class="view">
+            <div class="header-simple">
+                <h2>編集完了</h2>
+            </div>
             <div class="complete-content">
                 <div class="success-icon">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -137,9 +509,26 @@
                     </svg>
                 </div>
                 <h1 class="title">すべての編集が完了しました！</h1>
-                <button class="btn primary-btn btn-large" id="btn-restart" style="margin-top: 24px;">新しく画像を選ぶ</button>
+                <p class="subtitle" id="complete-subtitle">編集した画像はいつでも保存できます</p>
+
+                <div id="batch-gallery" class="batch-gallery" style="display: none;"></div>
+
+                <div class="complete-actions">
+                    <button type="button" class="btn primary-btn btn-large" id="btn-download-all" style="display: none;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        すべての画像を一括保存
+                    </button>
+                    <button type="button" class="btn outline-btn btn-large" id="btn-restart">新しく画像を選ぶ</button>
+                </div>
             </div>
         </div>
+
+        <!-- Toast Notification -->
+        <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     </div>
 
