@@ -6,7 +6,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const completeView = document.getElementById('complete-view');
 
     // --- Upload Elements ---
-    const dropZone = document.getElementById('drop-zone');
     const btnTriggerUpload = document.getElementById('btn-trigger-upload');
     const imageUpload = document.getElementById('image-upload');
 
@@ -59,19 +58,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterFill = document.getElementById('filter-fill');
 
     const toolMenuBar = document.getElementById('tool-menu-bar');
-    const menuScrollLeft = document.getElementById('menu-scroll-left');
-    const menuScrollRight = document.getElementById('menu-scroll-right');
     const toolItems = Array.from(document.querySelectorAll('.tool-item'));
 
     // --- Result & Complete View Elements ---
     const btnResultBack = document.getElementById('btn-result-back');
+    const btnRestartTop = document.getElementById('btn-restart-top');
     const resultTitlePill = document.getElementById('result-title-pill');
     const resultImage = document.getElementById('result-image');
     const btnDownloadImage = document.getElementById('btn-download-image');
     const btnShareImage = document.getElementById('btn-share-image');
     const btnNextImage = document.getElementById('btn-next-image');
 
-    const completeSubtitle = document.getElementById('complete-subtitle');
     const batchGallery = document.getElementById('batch-gallery');
     const btnDownloadAll = document.getElementById('btn-download-all');
     const btnRestart = document.getElementById('btn-restart');
@@ -84,25 +81,24 @@ document.addEventListener('DOMContentLoaded', () => {
         contrast:   { label: 'コントラスト', min: -100, max: 100, default: 0, bidirectional: true },
         highlights: { label: 'ハイライト', min: -100, max: 100, default: 0, bidirectional: true },
         shadows:    { label: 'シャドウ', min: -100, max: 100, default: 0, bidirectional: true },
-        saturation: { label: 'あざやかさ (彩度)', min: -100, max: 100, default: 0, bidirectional: true },
-        vibrance:   { label: '自然な彩度', min: -100, max: 100, default: 0, bidirectional: true },
-        warmth:     { label: '色温度 (暖かみ)', min: -100, max: 100, default: 0, bidirectional: true },
+        saturation: { label: '彩度', min: -100, max: 100, default: 0, bidirectional: true },
+        warmth:     { label: '色温度', min: -100, max: 100, default: 0, bidirectional: true },
         tint:       { label: '色合い', min: -100, max: 100, default: 0, bidirectional: true },
         sharpness:  { label: 'シャープ', min: 0, max: 100, default: 0, bidirectional: false },
         fade:       { label: 'フェード', min: 0, max: 100, default: 0, bidirectional: false },
-        vignette:   { label: 'ビネット (周辺光量)', min: -100, max: 100, default: 0, bidirectional: true }
+        vignette:   { label: 'ビネット', min: -100, max: 100, default: 0, bidirectional: true }
     };
 
     const DEFAULT_ASPECT_MODE = '0.8'; // 4:5
 
     const createDefaultState = () => ({
-        aspectMode: DEFAULT_ASPECT_MODE, // '0.8', '1', '1.7777778', '0.5625', '1.3333333', '0.75', 'original', 'free'
-        normCrop: null, // { x: 0..1, y: 0..1, w: 0..1, h: 0..1 } relative to oriented image
-        rotation90: 0,  // 0, 90, 180, 270
+        aspectMode: DEFAULT_ASPECT_MODE,
+        normCrop: null,
+        rotation90: 0,
         flipX: false,
         flipY: false,
-        straighten: 0,  // -45 to +45
-        filter: 'none', // 'none', 'vivid', 'warm', 'cool', 'dramatic', 'film', 'mono', 'sepia'
+        straighten: 0,
+        filter: 'none',
         filterStrength: 100,
         brightness: 0,
         exposure: 0,
@@ -110,7 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
         highlights: 0,
         shadows: 0,
         saturation: 0,
-        vibrance: 0,
         warmth: 0,
         tint: 0,
         sharpness: 0,
@@ -122,13 +117,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let imageFiles = [];
     let currentFileIndex = 0;
     let imageStates = [];
-    let editedResults = []; // Stores { dataUrl, blob, filename } per index
+    let editedResults = [];
     let currentSourceImage = null;
     let currentObjectUrl = null;
-    let activeTool = null; // Currently selected bottom menu tool
+    let activeTool = null;
     let isComparing = false;
 
-    // --- Preview Base Cache (for 60fps real-time pixel processing) ---
+    // --- Preview Base Cache ---
     const basePreviewCanvas = document.createElement('canvas');
     const basePreviewCtx = basePreviewCanvas.getContext('2d', { willReadFrequently: true });
     let basePreviewImageData = null;
@@ -160,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (toastTimer) clearTimeout(toastTimer);
         toastTimer = setTimeout(() => {
             toastEl.classList.remove('show');
-        }, 2200);
+        }, 1800);
     };
 
     const getCurrentState = () => {
@@ -256,7 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- Check Modified State for Dots & Reset Button ---
+    // --- Check Modified State ---
     const hasPixelAdjustments = (state) => {
         if (!state) return false;
         for (const key of Object.keys(ADJUSTMENT_TOOLS)) {
@@ -293,36 +288,32 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.classList.toggle('modified', modified);
         });
 
-        // Update Reset All button visibility
-        btnResetAll.style.display = isAdjustmentsModified(state) ? 'inline-flex' : 'none';
+        btnResetAll.style.display = isAdjustmentsModified(state) ? 'flex' : 'none';
 
-        // Update Aspect Pills
         Array.from(aspectPillsContainer.querySelectorAll('.aspect-pill')).forEach(pill => {
             pill.classList.toggle('active', pill.getAttribute('data-ratio') === state.aspectMode);
         });
 
-        // Update Transform UI
         btnFlipH.classList.toggle('active', state.flipX);
         btnFlipV.classList.toggle('active', state.flipY);
         straightenSlider.value = state.straighten;
         straightenVal.textContent = `${state.straighten > 0 ? '+' : ''}${state.straighten}°`;
         updateSliderTrackFill(straightenSlider, straightenFill, true);
 
-        // Update Filter Pills
         Array.from(filterPillsContainer.querySelectorAll('.filter-pill')).forEach(pill => {
             pill.classList.toggle('active', pill.getAttribute('data-filter') === state.filter);
         });
         if (state.filter === 'none') {
             filterSliderWrapper.style.display = 'none';
-            filterStrengthVal.textContent = 'オフ';
+            filterStrengthVal.style.display = 'none';
         } else {
             filterSliderWrapper.style.display = 'flex';
+            filterStrengthVal.style.display = 'inline-block';
             filterStrengthSlider.value = state.filterStrength;
             filterStrengthVal.textContent = `${state.filterStrength}%`;
             updateSliderTrackFill(filterStrengthSlider, filterFill, false);
         }
 
-        // Update Active Adjustment Slider if open
         if (activeTool && ADJUSTMENT_TOOLS[activeTool]) {
             const meta = ADJUSTMENT_TOOLS[activeTool];
             const val = state[activeTool];
@@ -362,13 +353,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateToolIndicators();
         activeControlPanel.classList.add('open');
         activeControlPanel.setAttribute('aria-hidden', 'false');
-
-        // Smoothly center the selected button in the horizontal menu
-        const btn = toolMenuBar.querySelector(`[data-tool="${toolName}"]`);
-        if (btn) {
-            const scrollTarget = btn.offsetLeft - (toolMenuBar.clientWidth / 2) + (btn.offsetWidth / 2);
-            toolMenuBar.scrollTo({ left: scrollTarget, behavior: 'smooth' });
-        }
     };
 
     const closeActivePanel = () => {
@@ -377,6 +361,57 @@ document.addEventListener('DOMContentLoaded', () => {
         activeControlPanel.setAttribute('aria-hidden', 'true');
         updateToolIndicators();
     };
+
+    // --- Direct One-Finger / Pointer Horizontal Scroll Support ---
+    // Native touch-action: pan-x handles 1-finger touch momentum on iOS/Android.
+    // This helper adds smooth 1-finger mouse drag & wheel horizontal scrolling on desktop/trackpads.
+    const enableHorizontalScroll = (scrollEl) => {
+        if (!scrollEl) return;
+        let isDown = false;
+        let startX = 0;
+        let startScrollLeft = 0;
+        let moved = false;
+
+        scrollEl.addEventListener('pointerdown', (e) => {
+            if (e.pointerType === 'touch') return; // Let native touch-action: pan-x handle touch with inertia
+            isDown = true;
+            moved = false;
+            startX = e.clientX;
+            startScrollLeft = scrollEl.scrollLeft;
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isDown || e.pointerType === 'touch') return;
+            const dx = e.clientX - startX;
+            if (Math.abs(dx) > 5) moved = true;
+            if (moved) {
+                scrollEl.scrollLeft = startScrollLeft - dx;
+            }
+        });
+
+        const endDrag = () => {
+            isDown = false;
+        };
+        window.addEventListener('pointerup', endDrag);
+        window.addEventListener('pointercancel', endDrag);
+
+        scrollEl.addEventListener('click', (e) => {
+            if (moved) {
+                e.preventDefault();
+                e.stopPropagation();
+                moved = false;
+            }
+        }, true);
+
+        scrollEl.addEventListener('wheel', (e) => {
+            if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                e.preventDefault();
+                scrollEl.scrollLeft += e.deltaY;
+            }
+        }, { passive: false });
+    };
+
+    [toolMenuBar, aspectPillsContainer, filterPillsContainer].forEach(enableHorizontalScroll);
 
     toolItems.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -389,36 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btn) btn.addEventListener('click', closeActivePanel);
     });
 
-    // Horizontal scrolling helpers for desktop mouse wheel & arrow buttons
-    const updateMenuScrollButtons = () => {
-        const sl = toolMenuBar.scrollLeft;
-        const maxSl = toolMenuBar.scrollWidth - toolMenuBar.clientWidth;
-        menuScrollLeft.classList.toggle('hidden', sl <= 4);
-        menuScrollRight.classList.toggle('hidden', maxSl - sl <= 4);
-    };
-
-    toolMenuBar.addEventListener('scroll', updateMenuScrollButtons, { passive: true });
-    window.addEventListener('resize', updateMenuScrollButtons);
-
-    [toolMenuBar, aspectPillsContainer, filterPillsContainer].forEach(scrollEl => {
-        if (!scrollEl) return;
-        scrollEl.addEventListener('wheel', (e) => {
-            if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                e.preventDefault();
-                scrollEl.scrollLeft += e.deltaY;
-            }
-        }, { passive: false });
-    });
-
-    menuScrollLeft.addEventListener('click', () => {
-        toolMenuBar.scrollBy({ left: -180, behavior: 'smooth' });
-    });
-
-    menuScrollRight.addEventListener('click', () => {
-        toolMenuBar.scrollBy({ left: 180, behavior: 'smooth' });
-    });
-
-    // --- Cross-Browser Pixel Processing Engine (Zero dependency on ctx.filter) ---
+    // --- Cross-Browser Pixel Processing Engine ---
     const buildColorLUTs = (state) => {
         const lutR = new Uint8Array(256);
         const lutG = new Uint8Array(256);
@@ -433,7 +439,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const highlightAmt = (state.highlights / 100) * 0.38;
         const fadeLift = (state.fade / 100) * 0.22;
 
-        // Warmth & Tint channel offsets
         const wR = state.warmth * 0.42;
         const wG = state.warmth * 0.08;
         const wB = -state.warmth * 0.42;
@@ -445,19 +450,14 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let i = 0; i < 256; i++) {
             let x = i / 255;
 
-            // 1. Exposure
             if (state.exposure !== 0) {
                 x = x * expFactor;
             }
-
-            // 2. Brightness (smooth curve + offset)
             if (state.brightness !== 0) {
                 x = x + brightOffset * (1 - x * 0.25);
             }
-
             x = clamp(x, 0, 1);
 
-            // 3. Shadows & Highlights
             if (state.shadows !== 0) {
                 const sMask = Math.pow(1 - x, 1.7) * (x + 0.15);
                 x += shadowAmt * sMask;
@@ -466,17 +466,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const hMask = Math.pow(x, 1.7) * (1.15 - x);
                 x += highlightAmt * hMask;
             }
-
             x = clamp(x, 0, 1);
 
-            // 4. Contrast
             if (state.contrast !== 0) {
                 x = (x - 0.5) * contrastFactor + 0.5;
             }
-
             x = clamp(x, 0, 1);
 
-            // 5. Fade (black point lift)
             if (state.fade > 0) {
                 x = fadeLift + x * (1 - fadeLift);
             }
@@ -520,15 +516,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const width = imageData.width;
         const height = imageData.height;
 
-        // Effective state combining user sliders + preset filter
         const eff = { ...state };
         const fStrength = (state.filter !== 'none') ? (state.filterStrength / 100) : 0;
 
         if (fStrength > 0) {
             if (state.filter === 'vivid') {
                 eff.contrast = clamp(eff.contrast + 18 * fStrength, -100, 100);
-                eff.saturation = clamp(eff.saturation + 28 * fStrength, -100, 100);
-                eff.vibrance = clamp(eff.vibrance + 20 * fStrength, -100, 100);
+                eff.saturation = clamp(eff.saturation + 32 * fStrength, -100, 100);
             } else if (state.filter === 'warm') {
                 eff.warmth = clamp(eff.warmth + 38 * fStrength, -100, 100);
                 eff.brightness = clamp(eff.brightness + 6 * fStrength, -100, 100);
@@ -554,8 +548,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { lutR, lutG, lutB } = buildColorLUTs(eff);
 
         const satVal = eff.saturation / 100;
-        const vibVal = eff.vibrance / 100;
-        const hasSatOrVib = satVal !== 0 || vibVal !== 0;
+        const hasSat = satVal !== 0;
         const isMono = state.filter === 'mono' && fStrength > 0;
         const isSepia = state.filter === 'sepia' && fStrength > 0;
         const vigAmt = eff.vignette / 100;
@@ -579,17 +572,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 let g = lutG[data[i + 1]];
                 let b = lutB[data[i + 2]];
 
-                if (hasSatOrVib || isMono || isSepia) {
+                if (hasSat || isMono || isSepia) {
                     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
 
-                    if (hasSatOrVib) {
-                        let boost = 1 + satVal;
-                        if (vibVal !== 0) {
-                            const maxC = r > g ? (r > b ? r : b) : (g > b ? g : b);
-                            const minC = r < g ? (r < b ? r : b) : (g < b ? g : b);
-                            const curSat = (maxC - minC) / 255;
-                            boost *= (1 + vibVal * (1 - curSat * curSat));
-                        }
+                    if (hasSat) {
+                        const boost = 1 + satVal;
                         r = lum + (r - lum) * boost;
                         g = lum + (g - lum) * boost;
                         b = lum + (b - lum) * boost;
@@ -640,7 +627,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- Geometry Drawing Helper (Rotation 90°, Flip, Straighten with Auto-Zoom) ---
+    // --- Geometry Drawing Helper ---
     const computeStraightenAutoZoom = (w, h, angleDeg) => {
         if (!angleDeg) return 1;
         const rad = (Math.abs(angleDeg) * Math.PI) / 180;
@@ -735,7 +722,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const ratio = getNumericAspectRatio(aspectMode);
         if (!ratio) {
-            // Free mode: 90% centered box
             state.normCrop = { x: 0.05, y: 0.05, w: 0.9, h: 0.9 };
             return;
         }
@@ -794,8 +780,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const contH = container.clientHeight;
         if (contW <= 0 || contH <= 0) return;
 
-        const padX = 28;
-        const padY = 28;
+        const padX = 24;
+        const padY = 24;
         const availW = Math.max(80, contW - padX * 2);
         const availH = Math.max(80, contH - padY * 2);
 
@@ -813,7 +799,6 @@ document.addEventListener('DOMContentLoaded', () => {
         syncCropBoxFromNorm();
     };
 
-    // Observe workspace size changes (window resize, orientation change, bottom panel toggle)
     if (typeof ResizeObserver !== 'undefined') {
         const ro = new ResizeObserver(() => {
             if (editorView.classList.contains('active')) {
@@ -829,7 +814,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Interactive Crop Box Dragging (Unified Pointer Events with Corner Anchor Math) ---
+    // --- Interactive Crop Box Dragging ---
     const getEventClientPos = (e) => {
         if (e.touches && e.touches.length > 0) {
             return { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -884,32 +869,22 @@ document.addEventListener('DOMContentLoaded', () => {
             cropBox.w = initialCropBox.w;
             cropBox.h = initialCropBox.h;
         } else if (!lockedRatio) {
-            // Freeform resize
             let left = initialCropBox.x;
             let top = initialCropBox.y;
             let right = initialCropBox.x + initialCropBox.w;
             let bottom = initialCropBox.y + initialCropBox.h;
 
-            if (dragType.includes('w')) {
-                left = clamp(left + dx, imgRect.x, right - minSide);
-            }
-            if (dragType.includes('e')) {
-                right = clamp(right + dx, left + minSide, imgRect.x + imgRect.w);
-            }
-            if (dragType.includes('n')) {
-                top = clamp(top + dy, imgRect.y, bottom - minSide);
-            }
-            if (dragType.includes('s')) {
-                bottom = clamp(bottom + dy, top + minSide, imgRect.y + imgRect.h);
-            }
+            if (dragType.includes('w')) left = clamp(left + dx, imgRect.x, right - minSide);
+            if (dragType.includes('e')) right = clamp(right + dx, left + minSide, imgRect.x + imgRect.w);
+            if (dragType.includes('n')) top = clamp(top + dy, imgRect.y, bottom - minSide);
+            if (dragType.includes('s')) bottom = clamp(bottom + dy, top + minSide, imgRect.y + imgRect.h);
 
             cropBox.x = left;
             cropBox.y = top;
             cropBox.w = right - left;
             cropBox.h = bottom - top;
         } else {
-            // Fixed Aspect Ratio Resize with exact corner/edge anchoring
-            const R = lockedRatio; // width / height
+            const R = lockedRatio;
             const minW = Math.max(minSide, minSide * R);
 
             if (dragType === 'se' || dragType === 'sw' || dragType === 'ne' || dragType === 'nw') {
@@ -1023,7 +998,6 @@ document.addEventListener('DOMContentLoaded', () => {
     activeSlider.addEventListener('input', onActiveSliderInput);
     activeSlider.addEventListener('change', onActiveSliderInput);
 
-    // Double-click or Reset button on single slider
     const resetActiveSingleTool = () => {
         if (!activeTool || !ADJUSTMENT_TOOLS[activeTool]) return;
         const state = getCurrentState();
@@ -1048,7 +1022,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.vignette !== 0) schedulePreviewRender();
     });
 
-    // Transform Controls (Rotate 90°, Flip H/V, Straighten)
+    // Transform Controls
     btnRotateCCW.addEventListener('click', () => {
         const state = getCurrentState();
         state.rotation90 = (state.rotation90 + 270) % 360;
@@ -1126,7 +1100,7 @@ document.addEventListener('DOMContentLoaded', () => {
     filterStrengthSlider.addEventListener('input', onFilterStrengthInput);
     filterStrengthSlider.addEventListener('change', onFilterStrengthInput);
 
-    // Compare (Hold to see original) & Reset All
+    // Compare & Reset All
     const startCompare = (e) => {
         if (e && e.cancelable) e.preventDefault();
         isComparing = true;
@@ -1160,7 +1134,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rebuildPreviewBase();
         relayoutWorkspace();
         updateToolIndicators();
-        showToast('補正をリセットしました');
+        showToast('リセットしました');
     });
 
     // Batch Apply Settings to All Images
@@ -1176,29 +1150,20 @@ document.addEventListener('DOMContentLoaded', () => {
             target.filter = current.filter;
             target.filterStrength = current.filterStrength;
             target.aspectMode = current.aspectMode;
-            target.normCrop = null; // Recompute crop cleanly when that image loads
+            target.normCrop = null;
             imageStates[i] = target;
         }
-        showToast(`全${imageFiles.length}枚に同じ補正・比率を適用しました`);
+        showToast('全画像に適用しました');
     });
 
-    // --- File Loading (Button, Drag & Drop, Clipboard Paste) ---
-    btnTriggerUpload.addEventListener('click', (e) => {
-        e.stopPropagation();
-        imageUpload.click();
-    });
-
-    dropZone.addEventListener('click', (e) => {
-        if (e.target === btnTriggerUpload || btnTriggerUpload.contains(e.target)) return;
+    // --- File Loading ---
+    btnTriggerUpload.addEventListener('click', () => {
         imageUpload.click();
     });
 
     const handleSelectedFiles = (fileList) => {
         const validFiles = Array.from(fileList).filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif)$/i.test(f.name));
-        if (validFiles.length === 0) {
-            showToast('対応している画像ファイルを選択してください');
-            return;
-        }
+        if (validFiles.length === 0) return;
 
         imageFiles = validFiles;
         currentFileIndex = 0;
@@ -1217,12 +1182,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Drag & Drop support
     ['dragenter', 'dragover'].forEach(evtName => {
         window.addEventListener(evtName, (e) => {
             e.preventDefault();
             if (uploadView.classList.contains('active')) {
-                dropZone.classList.add('drag-over');
+                btnTriggerUpload.classList.add('drag-over');
             }
         });
     });
@@ -1230,7 +1194,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ['dragleave', 'drop'].forEach(evtName => {
         window.addEventListener(evtName, (e) => {
             e.preventDefault();
-            dropZone.classList.remove('drag-over');
+            btnTriggerUpload.classList.remove('drag-over');
         });
     });
 
@@ -1240,7 +1204,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Paste image from clipboard support
     window.addEventListener('paste', (e) => {
         if (!uploadView.classList.contains('active')) return;
         if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
@@ -1252,11 +1215,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const file = imageFiles[currentFileIndex];
         if (!file) return;
 
-        // Update Header Progress & Multi-image Controls
+        const isMulti = imageFiles.length > 1;
+        progressIndicator.style.display = isMulti ? 'block' : 'none';
         progressIndicator.textContent = `${currentFileIndex + 1} / ${imageFiles.length}`;
-        btnApplyAll.style.display = imageFiles.length > 1 ? 'inline-flex' : 'none';
-        btnNextImage.textContent = currentFileIndex < imageFiles.length - 1 ? '次の画像へ進む' : 'すべての編集を完了';
-        btnProcess.textContent = '完了';
+        btnApplyAll.style.display = isMulti ? 'inline-flex' : 'none';
         btnProcess.disabled = false;
 
         if (currentObjectUrl) {
@@ -1280,11 +1242,9 @@ document.addEventListener('DOMContentLoaded', () => {
             rebuildPreviewBase();
             relayoutWorkspace();
             updateToolIndicators();
-            updateMenuScrollButtons();
         };
 
         img.onerror = () => {
-            // Fallback to FileReader if ObjectURL fails
             const reader = new FileReader();
             reader.onload = (ev) => {
                 img.src = ev.target.result;
@@ -1296,7 +1256,7 @@ document.addEventListener('DOMContentLoaded', () => {
         img.src = currentObjectUrl;
     };
 
-    // --- High-Resolution Export Engine (Safe for iOS 16.7MP limit & All Browsers) ---
+    // --- High-Resolution Export Engine ---
     const renderFinalExport = (img, state, originalFile, index) => {
         const isSwapped = (state.rotation90 % 180) !== 0;
         const fullOrientedW = isSwapped ? img.naturalHeight : img.naturalWidth;
@@ -1306,7 +1266,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const rawCropW = Math.max(1, Math.round(fullOrientedW * nc.w));
         const rawCropH = Math.max(1, Math.round(fullOrientedH * nc.h));
 
-        // Cap maximum export dimension at 3200px (~10MP) so iOS Safari never hits the 16.7MP canvas limit
         const MAX_EXPORT_DIM = 3200;
         const exportScale = Math.min(1, MAX_EXPORT_DIM / Math.max(rawCropW, rawCropH));
         const outW = Math.max(1, Math.round(rawCropW * exportScale));
@@ -1317,11 +1276,9 @@ document.addEventListener('DOMContentLoaded', () => {
         finalCanvas.height = outH;
         const ctx = finalCanvas.getContext('2d', { willReadFrequently: true });
 
-        // Fill white background (for JPEGs)
         ctx.fillStyle = '#000000';
         ctx.fillRect(0, 0, outW, outH);
 
-        // Draw transformed source shifted by normalized crop offset
         const virtualFullW = outW / nc.w;
         const virtualFullH = outH / nc.h;
         ctx.save();
@@ -1329,7 +1286,6 @@ document.addEventListener('DOMContentLoaded', () => {
         drawTransformedSource(ctx, img, virtualFullW, virtualFullH, state);
         ctx.restore();
 
-        // Apply identical pixel adjustments across all browsers/OSes
         if (hasPixelAdjustments(state)) {
             const exportImageData = ctx.getImageData(0, 0, outW, outH);
             applyPixelAdjustments(exportImageData, state, { x: 0, y: 0, w: 1, h: 1 });
@@ -1355,14 +1311,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnResultBack.addEventListener('click', () => {
         showView(editorView);
-        btnProcess.textContent = '完了';
         btnProcess.disabled = false;
         requestAnimationFrame(relayoutWorkspace);
     });
 
+    if (btnRestartTop) {
+        btnRestartTop.addEventListener('click', resetApp);
+    }
+
     btnProcess.addEventListener('click', () => {
         if (!currentSourceImage) return;
-        btnProcess.textContent = '処理中...';
         btnProcess.disabled = true;
 
         setTimeout(() => {
@@ -1373,33 +1331,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 editedResults[currentFileIndex] = res;
 
                 resultImage.src = res.dataUrl;
-                resultTitlePill.textContent = imageFiles.length > 1
-                    ? `完成画像 (${currentFileIndex + 1} / ${imageFiles.length})`
-                    : '完成画像';
 
-                // Show native share button if supported (iOS / Android / Windows Share)
+                const isMulti = imageFiles.length > 1;
+                resultTitlePill.style.display = isMulti ? 'block' : 'none';
+                resultTitlePill.textContent = `${currentFileIndex + 1} / ${imageFiles.length}`;
+
                 btnShareImage.style.display = canUseWebShareFiles() ? 'inline-flex' : 'none';
+                btnNextImage.style.display = isMulti ? 'inline-flex' : 'none';
 
                 showView(resultView);
             } catch (err) {
                 console.error(err);
-                showToast('画像の処理中にエラーが発生しました');
+                showToast('エラーが発生しました');
             } finally {
-                btnProcess.textContent = '完了';
                 btnProcess.disabled = false;
             }
-        }, 30);
+        }, 20);
     });
 
-    // One-Click Direct Save Button
     btnDownloadImage.addEventListener('click', () => {
         const res = editedResults[currentFileIndex];
         if (!res) return;
         triggerBlobDownload(res.blob, res.filename);
-        showToast('画像を保存しました');
+        showToast('保存しました');
     });
 
-    // Native Share / Save to Photos Button (for iPhone / Android / supported browsers)
     btnShareImage.addEventListener('click', async () => {
         const res = editedResults[currentFileIndex];
         if (!res) return;
@@ -1412,12 +1368,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             if (err && err.name !== 'AbortError') {
                 triggerBlobDownload(res.blob, res.filename);
-                showToast('画像を保存しました');
+                showToast('保存しました');
             }
         }
     });
 
-    // Next Image or Complete View
     btnNextImage.addEventListener('click', () => {
         if (currentFileIndex < imageFiles.length - 1) {
             currentFileIndex++;
@@ -1433,37 +1388,27 @@ document.addEventListener('DOMContentLoaded', () => {
         const validResults = editedResults.filter(Boolean);
         batchGallery.innerHTML = '';
 
-        if (validResults.length > 1) {
-            completeSubtitle.textContent = `全${validResults.length}枚の編集が完了しました`;
-            batchGallery.style.display = 'grid';
-            btnDownloadAll.style.display = 'inline-flex';
+        validResults.forEach((res, idx) => {
+            const card = document.createElement('div');
+            card.className = 'batch-item';
 
-            validResults.forEach((res, idx) => {
-                const card = document.createElement('div');
-                card.className = 'batch-item';
+            const imgEl = document.createElement('img');
+            imgEl.src = res.dataUrl;
+            imgEl.alt = '';
 
-                const imgEl = document.createElement('img');
-                imgEl.src = res.dataUrl;
-                imgEl.alt = `編集済み画像 ${idx + 1}`;
-
-                const saveBtn = document.createElement('button');
-                saveBtn.type = 'button';
-                saveBtn.className = 'batch-item-btn';
-                saveBtn.textContent = `保存 (${idx + 1})`;
-                saveBtn.addEventListener('click', () => {
-                    triggerBlobDownload(res.blob, res.filename);
-                    showToast(`画像 ${idx + 1} を保存しました`);
-                });
-
-                card.appendChild(imgEl);
-                card.appendChild(saveBtn);
-                batchGallery.appendChild(card);
+            const saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            saveBtn.className = 'batch-item-btn';
+            saveBtn.textContent = '保存';
+            saveBtn.addEventListener('click', () => {
+                triggerBlobDownload(res.blob, res.filename);
+                showToast('保存しました');
             });
-        } else {
-            completeSubtitle.textContent = '画像の編集と出力が完了しました';
-            batchGallery.style.display = 'none';
-            btnDownloadAll.style.display = 'none';
-        }
+
+            card.appendChild(imgEl);
+            card.appendChild(saveBtn);
+            batchGallery.appendChild(card);
+        });
     };
 
     btnDownloadAll.addEventListener('click', () => {
@@ -1473,7 +1418,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 triggerBlobDownload(res.blob, res.filename);
             }, idx * 250);
         });
-        showToast(`${validResults.length}枚の画像を順次保存しています`);
+        showToast('保存しています');
     });
 
     btnRestart.addEventListener('click', resetApp);
