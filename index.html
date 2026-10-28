@@ -133,12 +133,25 @@
                                 </button>
                             </div>
                         </div>
-                        <div class="slider-wrapper">
-                            <div class="slider-track-bg">
-                                <div id="slider-fill" class="slider-fill"></div>
-                                <div id="slider-center-tick" class="slider-center-tick"></div>
+                        <div class="slider-row">
+                            <button type="button" class="btn-step" id="btn-step-minus" aria-label="1減らす">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                            </button>
+                            <div class="slider-wrapper">
+                                <div class="slider-track-bg">
+                                    <div id="slider-fill" class="slider-fill"></div>
+                                    <div id="slider-center-tick" class="slider-center-tick"></div>
+                                </div>
+                                <input type="range" id="active-slider" min="-100" max="100" value="0" step="1" class="slider">
                             </div>
-                            <input type="range" id="active-slider" min="-100" max="100" value="0" step="1" class="slider">
+                            <button type="button" class="btn-step" id="btn-step-plus" aria-label="1増やす">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                            </button>
                         </div>
                     </div>
 
@@ -207,12 +220,25 @@
                                 </svg>
                             </button>
                         </div>
-                        <div class="slider-wrapper">
-                            <div class="slider-track-bg">
-                                <div id="straighten-fill" class="slider-fill"></div>
-                                <div class="slider-center-tick"></div>
+                        <div class="slider-row">
+                            <button type="button" class="btn-step" id="btn-straighten-minus" aria-label="0.5度減らす">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                            </button>
+                            <div class="slider-wrapper">
+                                <div class="slider-track-bg">
+                                    <div id="straighten-fill" class="slider-fill"></div>
+                                    <div class="slider-center-tick"></div>
+                                </div>
+                                <input type="range" id="straighten-slider" min="-45" max="45" value="0" step="0.5" class="slider">
                             </div>
-                            <input type="range" id="straighten-slider" min="-45" max="45" value="0" step="0.5" class="slider">
+                            <button type="button" class="btn-step" id="btn-straighten-plus" aria-label="0.5度増やす">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                            </button>
                         </div>
                     </div>
 
@@ -239,11 +265,24 @@
                             <button type="button" class="filter-pill" data-filter="mono">モノクロ</button>
                             <button type="button" class="filter-pill" data-filter="sepia">セピア</button>
                         </div>
-                        <div class="slider-wrapper" id="filter-slider-wrapper" style="display: none;">
-                            <div class="slider-track-bg">
-                                <div id="filter-fill" class="slider-fill"></div>
+                        <div class="slider-row" id="filter-slider-wrapper" style="display: none;">
+                            <button type="button" class="btn-step" id="btn-filter-minus" aria-label="1%減らす">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                            </button>
+                            <div class="slider-wrapper">
+                                <div class="slider-track-bg">
+                                    <div id="filter-fill" class="slider-fill"></div>
+                                </div>
+                                <input type="range" id="filter-strength-slider" min="0" max="100" value="100" step="1" class="slider">
                             </div>
-                            <input type="range" id="filter-strength-slider" min="0" max="100" value="100" step="1" class="slider">
+                            <button type="button" class="btn-step" id="btn-filter-plus" aria-label="1%増やす">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                            </button>
                         </div>
                     </div>
 

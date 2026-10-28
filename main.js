@@ -35,6 +35,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const activeSlider = document.getElementById('active-slider');
     const sliderFill = document.getElementById('slider-fill');
     const sliderCenterTick = document.getElementById('slider-center-tick');
+    const btnStepMinus = document.getElementById('btn-step-minus');
+    const btnStepPlus = document.getElementById('btn-step-plus');
     const btnResetSingle = document.getElementById('btn-reset-single');
     const btnCloseSlider = document.getElementById('btn-close-slider');
     const btnCloseAspect = document.getElementById('btn-close-aspect');
@@ -49,6 +51,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const straightenSlider = document.getElementById('straighten-slider');
     const straightenVal = document.getElementById('straighten-val');
     const straightenFill = document.getElementById('straighten-fill');
+    const btnStraightenMinus = document.getElementById('btn-straighten-minus');
+    const btnStraightenPlus = document.getElementById('btn-straighten-plus');
     const btnResetTransform = document.getElementById('btn-reset-transform');
 
     const filterPillsContainer = document.getElementById('filter-pills');
@@ -56,6 +60,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterStrengthSlider = document.getElementById('filter-strength-slider');
     const filterStrengthVal = document.getElementById('filter-strength-val');
     const filterFill = document.getElementById('filter-fill');
+    const btnFilterMinus = document.getElementById('btn-filter-minus');
+    const btnFilterPlus = document.getElementById('btn-filter-plus');
 
     const toolMenuBar = document.getElementById('tool-menu-bar');
     const toolItems = Array.from(document.querySelectorAll('.tool-item'));
@@ -1011,6 +1017,60 @@ document.addEventListener('DOMContentLoaded', () => {
     container.addEventListener('dragstart', e => e.preventDefault());
 
     // --- Adjustment Sliders & Controls Wiring ---
+    const setupStepButton = (btn, actionFn) => {
+        if (!btn) return;
+        let timer = null;
+        let interval = null;
+
+        const stop = () => {
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+            if (interval) {
+                clearInterval(interval);
+                interval = null;
+            }
+        };
+
+        btn.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            actionFn();
+            stop();
+            timer = setTimeout(() => {
+                interval = setInterval(() => {
+                    actionFn();
+                }, 65);
+            }, 300);
+        });
+
+        btn.addEventListener('pointerup', stop);
+        btn.addEventListener('pointerleave', stop);
+        btn.addEventListener('pointercancel', stop);
+
+        btn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                actionFn();
+            }
+        });
+    };
+
+    const stepActiveSlider = (delta) => {
+        if (!activeTool || !ADJUSTMENT_TOOLS[activeTool]) return;
+        const meta = ADJUSTMENT_TOOLS[activeTool];
+        const currentVal = parseInt(activeSlider.value, 10) || 0;
+        const nextVal = clamp(currentVal + delta, meta.min, meta.max);
+        if (nextVal !== currentVal) {
+            activeSlider.value = nextVal;
+            onActiveSliderInput();
+        }
+    };
+
+    setupStepButton(btnStepMinus, () => stepActiveSlider(-1));
+    setupStepButton(btnStepPlus, () => stepActiveSlider(1));
+
     const onActiveSliderInput = () => {
         if (!activeTool || !ADJUSTMENT_TOOLS[activeTool]) return;
         const state = getCurrentState();
@@ -1104,6 +1164,17 @@ document.addEventListener('DOMContentLoaded', () => {
     straightenSlider.addEventListener('input', onStraightenInput);
     straightenSlider.addEventListener('change', onStraightenInput);
 
+    const stepStraightenSlider = (delta) => {
+        const currentVal = parseFloat(straightenSlider.value) || 0;
+        const nextVal = clamp(Math.round((currentVal + delta) * 2) / 2, -45, 45);
+        if (nextVal !== currentVal) {
+            straightenSlider.value = nextVal;
+            onStraightenInput();
+        }
+    };
+    setupStepButton(btnStraightenMinus, () => stepStraightenSlider(-0.5));
+    setupStepButton(btnStraightenPlus, () => stepStraightenSlider(0.5));
+
     btnResetTransform.addEventListener('click', () => {
         const state = getCurrentState();
         const rotChanged = state.rotation90 !== 0;
@@ -1138,6 +1209,17 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     filterStrengthSlider.addEventListener('input', onFilterStrengthInput);
     filterStrengthSlider.addEventListener('change', onFilterStrengthInput);
+
+    const stepFilterSlider = (delta) => {
+        const currentVal = parseInt(filterStrengthSlider.value, 10) || 0;
+        const nextVal = clamp(currentVal + delta, 0, 100);
+        if (nextVal !== currentVal) {
+            filterStrengthSlider.value = nextVal;
+            onFilterStrengthInput();
+        }
+    };
+    setupStepButton(btnFilterMinus, () => stepFilterSlider(-1));
+    setupStepButton(btnFilterPlus, () => stepFilterSlider(1));
 
     // Compare & Reset All
     const startCompare = (e) => {
