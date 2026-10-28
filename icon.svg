@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#2563eb" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Background Card -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle Outer Border -->
+  <rect x="6" y="6" width="500" height="500" rx="106" fill="none" stroke="rgba(255, 255, 255, 0.12)" stroke-width="3"/>
+
+  <!-- Main Image Frame / Crop Motif -->
+  <g filter="url(#glow)">
+    <rect x="116" y="116" width="280" height="280" rx="36" fill="none" stroke="url(#accentGrad)" stroke-width="20"/>
+    
+    <!-- Mountain / Sun (Photo Symbol) -->
+    <path d="M146 340 L216 245 C222 237, 234 237, 240 245 L285 305 L305 280 C311 272, 323 272, 329 280 L366 340 Z" fill="url(#accentGrad)" opacity="0.9"/>
+    <circle cx="320" cy="200" r="28" fill="#38bdf8"/>
+
+    <!-- Crop Corner / Adjustment Accents -->
+    <path d="M96 156 L96 96 L156 96" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+    <path d="M416 156 L416 96 L356 96" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+    <path d="M96 356 L96 416 L156 416" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+    <path d="M416 356 L416 416 L356 416" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+  </g>
+</svg>

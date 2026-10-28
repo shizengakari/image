@@ -662,13 +662,41 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.restore();
     };
 
-    // --- Rebuild Base Preview Buffer & Render Live Workspace ---
-    const rebuildPreviewBase = () => {
+    // --- Update Oriented Dimensions & Normalized Crop Helper ---
+    const updateOrientedDimensions = () => {
         if (!currentSourceImage) return;
         const state = getCurrentState();
         const isSwapped = (state.rotation90 % 180) !== 0;
         orientedWidth = isSwapped ? currentSourceImage.naturalHeight : currentSourceImage.naturalWidth;
         orientedHeight = isSwapped ? currentSourceImage.naturalWidth : currentSourceImage.naturalHeight;
+    };
+
+    const rotateNormCrop = (clockwise = true) => {
+        const state = getCurrentState();
+        if (!state.normCrop) return;
+        const { x, y, w, h } = state.normCrop;
+        if (clockwise) {
+            state.normCrop = {
+                x: clamp(1 - (y + h), 0, 1),
+                y: clamp(x, 0, 1),
+                w: clamp(h, 0.05, 1),
+                h: clamp(w, 0.05, 1)
+            };
+        } else {
+            state.normCrop = {
+                x: clamp(y, 0, 1),
+                y: clamp(1 - (x + w), 0, 1),
+                w: clamp(h, 0.05, 1),
+                h: clamp(w, 0.05, 1)
+            };
+        }
+    };
+
+    // --- Rebuild Base Preview Buffer & Render Live Workspace ---
+    const rebuildPreviewBase = () => {
+        if (!currentSourceImage) return;
+        updateOrientedDimensions();
+        const state = getCurrentState();
 
         const maxPreviewDim = 920;
         const pScale = Math.min(1, maxPreviewDim / Math.max(orientedWidth, orientedHeight));
@@ -1026,7 +1054,12 @@ document.addEventListener('DOMContentLoaded', () => {
     btnRotateCCW.addEventListener('click', () => {
         const state = getCurrentState();
         state.rotation90 = (state.rotation90 + 270) % 360;
-        resetNormCropForAspect(state.aspectMode);
+        updateOrientedDimensions();
+        if (state.aspectMode === 'free') {
+            rotateNormCrop(false);
+        } else {
+            resetNormCropForAspect(state.aspectMode);
+        }
         rebuildPreviewBase();
         relayoutWorkspace();
         updateToolIndicators();
@@ -1035,7 +1068,12 @@ document.addEventListener('DOMContentLoaded', () => {
     btnRotateCW.addEventListener('click', () => {
         const state = getCurrentState();
         state.rotation90 = (state.rotation90 + 90) % 360;
-        resetNormCropForAspect(state.aspectMode);
+        updateOrientedDimensions();
+        if (state.aspectMode === 'free') {
+            rotateNormCrop(true);
+        } else {
+            resetNormCropForAspect(state.aspectMode);
+        }
         rebuildPreviewBase();
         relayoutWorkspace();
         updateToolIndicators();
@@ -1073,6 +1111,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.flipX = false;
         state.flipY = false;
         state.straighten = 0;
+        updateOrientedDimensions();
         if (rotChanged) resetNormCropForAspect(state.aspectMode);
         rebuildPreviewBase();
         relayoutWorkspace();
@@ -1127,8 +1166,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         imageStates[currentFileIndex] = createDefaultState();
         imageStates[currentFileIndex].aspectMode = prevAspect;
+        updateOrientedDimensions();
         if (!rotWasSwapped && prevCrop) {
             imageStates[currentFileIndex].normCrop = prevCrop;
+        } else {
+            resetNormCropForAspect(prevAspect);
         }
 
         rebuildPreviewBase();
@@ -1279,8 +1321,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.fillStyle = '#000000';
         ctx.fillRect(0, 0, outW, outH);
 
-        const virtualFullW = outW / nc.w;
-        const virtualFullH = outH / nc.h;
+        const virtualScale = outW / (fullOrientedW * nc.w);
+        const virtualFullW = fullOrientedW * virtualScale;
+        const virtualFullH = fullOrientedH * virtualScale;
         ctx.save();
         ctx.translate(-nc.x * virtualFullW, -nc.y * virtualFullH);
         drawTransformedSource(ctx, img, virtualFullW, virtualFullH, state);
@@ -1441,4 +1484,28 @@ document.addEventListener('DOMContentLoaded', () => {
             event.returnValue = '';
         }
     });
+
+    // --- PWA: Service Worker 登録 & 自動アップデート ---
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js').then((registration) => {
+                // ページ読み込み時に更新をチェック
+                registration.update();
+
+                // 新しい Service Worker がインストールされたときの検知
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    if (newWorker) {
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                showToast('アプリが最新版に更新されました');
+                            }
+                        });
+                    }
+                });
+            }).catch((err) => {
+                console.log('[PWA] Service Worker 登録エラー:', err);
+            });
+        });
+    }
 });
