@@ -27,7 +27,7 @@
         <!-- Upload View: Minimal, single action -->
         <div id="upload-view" class="view active">
             <div class="upload-content">
-                <input type="file" id="image-upload" accept="image/*" class="file-input" multiple>
+                <input type="file" id="image-upload" accept="image/*,.heic,.heif,.hif,.avif,.webp,.bmp,.tif,.tiff,.jfif,.dng,.raw,.cr2,.cr3,.nef,.nrw,.arw,.srf,.sr2,.orf,.rw2,.raf,.pef,.srw" class="file-input" multiple>
                 <button type="button" class="upload-minimal-btn" id="btn-trigger-upload">
                     <span class="upload-icon-circle">
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -44,7 +44,7 @@
         <!-- Editor View -->
         <div id="editor-view" class="view">
             <div class="editor-header glass">
-                <button type="button" class="btn icon-btn" id="btn-back" aria-label="戻る">
+                <button type="button" class="btn icon-btn" id="btn-back" aria-label="戻る" title="戻る">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="19" y1="12" x2="5" y2="12"></line>
                         <polyline points="12 19 5 12 12 5"></polyline>
@@ -52,20 +52,45 @@
                 </button>
                 
                 <div class="header-center">
-                    <div class="progress-pill" id="progress-indicator" style="display: none;">1 / 1</div>
-                    <button type="button" class="btn icon-btn" id="btn-apply-all" style="display: none;" aria-label="すべてに適用" title="すべての画像に同じ設定を適用">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    <div class="progress-nav" id="progress-nav" style="display: none;">
+                        <button type="button" class="progress-nav-btn" id="btn-prev-image" aria-label="前の画像">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="15 18 9 12 15 6"></polyline>
+                            </svg>
+                        </button>
+                        <span class="progress-pill-text" id="progress-indicator">1 / 1</span>
+                        <button type="button" class="progress-nav-btn" id="btn-next-edit" aria-label="次の画像">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="header-right">
+                    <button type="button" class="btn icon-btn icon-btn-sm" id="btn-undo" aria-label="1つ前に戻す" title="1つ前に戻す (Ctrl+Z)" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 14 4 9l5-5"></path>
+                            <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"></path>
+                        </svg>
+                    </button>
+                    <button type="button" class="btn icon-btn icon-btn-sm" id="btn-redo" aria-label="やり直す" title="やり直す (Ctrl+Y)" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="m15 14 5-5-5-5"></path>
+                            <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"></path>
+                        </svg>
+                    </button>
+                    <button type="button" class="btn primary-btn btn-process-pill" id="btn-process" aria-label="完了">
+                        <span id="btn-process-label" class="btn-process-label" style="display: none;">次へ</span>
+                        <svg id="icon-process-check" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <svg id="icon-process-next" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <polyline points="12 5 19 12 12 19"></polyline>
                         </svg>
                     </button>
                 </div>
-
-                <button type="button" class="btn primary-btn btn-sm" id="btn-process" aria-label="完了">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                    </svg>
-                </button>
             </div>
             
             <!-- Cropper & Live Preview Workspace -->
@@ -91,13 +116,22 @@
 
                 <!-- Floating Workspace Icon Buttons -->
                 <div class="workspace-floating-bar">
-                    <button type="button" class="floating-icon-btn" id="btn-reset-all" style="display: none;" aria-label="すべてリセット">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-                            <polyline points="3 3 3 8 8 8"></polyline>
+                    <button type="button" class="floating-pill-btn" id="btn-toggle-zoom" aria-label="全体表示に切替" title="全体表示 / 切り抜き拡大を切替">
+                        <svg id="icon-zoom-out" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                            <polyline points="4 14 10 14 10 20"></polyline>
+                            <polyline points="20 10 14 10 14 4"></polyline>
+                            <line x1="14" y1="10" x2="21" y2="3"></line>
+                            <line x1="3" y1="21" x2="10" y2="14"></line>
                         </svg>
+                        <svg id="icon-zoom-in" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 3 21 3 21 9"></polyline>
+                            <polyline points="9 21 3 21 3 15"></polyline>
+                            <line x1="21" y1="3" x2="14" y2="10"></line>
+                            <line x1="3" y1="21" x2="10" y2="14"></line>
+                        </svg>
+                        <span id="zoom-toggle-label">拡大</span>
                     </button>
-                    <button type="button" class="floating-icon-btn" id="btn-compare" aria-label="元画像と比較">
+                    <button type="button" class="floating-icon-btn" id="btn-compare" aria-label="元画像と比較" title="長押しで元画像と比較">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                             <circle cx="12" cy="12" r="3"></circle>
@@ -120,12 +154,6 @@
                                 <span id="active-tool-val" class="value-badge">0</span>
                             </div>
                             <div class="panel-actions">
-                                <button type="button" class="btn icon-close-btn" id="btn-reset-single" aria-label="リセット">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-                                        <polyline points="3 3 3 8 8 8"></polyline>
-                                    </svg>
-                                </button>
                                 <button type="button" class="btn icon-close-btn" id="btn-close-slider" aria-label="閉じる">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                                         <polyline points="6 9 12 15 18 9"></polyline>
@@ -185,12 +213,6 @@
                                 <span id="straighten-val" class="value-badge">0°</span>
                             </div>
                             <div class="panel-actions">
-                                <button type="button" class="btn icon-close-btn" id="btn-reset-transform" aria-label="リセット">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-                                        <polyline points="3 3 3 8 8 8"></polyline>
-                                    </svg>
-                                </button>
                                 <button type="button" class="btn icon-close-btn" id="btn-close-transform" aria-label="閉じる">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                                         <polyline points="6 9 12 15 18 9"></polyline>
@@ -457,16 +479,16 @@
             </div>
         </div>
 
-        <!-- Result View -->
-        <div id="result-view" class="view">
+        <!-- Complete & Save View (Shown after all images finish editing) -->
+        <div id="complete-view" class="view">
             <div class="editor-header glass">
-                <button type="button" class="btn icon-btn" id="btn-result-back" aria-label="戻る">
+                <button type="button" class="btn icon-btn" id="btn-complete-back" aria-label="編集に戻る" title="編集に戻る">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="19" y1="12" x2="5" y2="12"></line>
                         <polyline points="12 19 5 12 12 5"></polyline>
                     </svg>
                 </button>
-                <div class="progress-pill" id="result-title-pill" style="display: none;">1 / 1</div>
+                <div class="progress-pill" id="complete-title-pill">編集完了</div>
                 <button type="button" class="btn icon-btn" id="btn-restart-top" aria-label="新しく選ぶ" title="別の画像を選ぶ">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -475,62 +497,78 @@
                     </svg>
                 </button>
             </div>
-            
-            <div class="result-content">
-                <div class="result-image-container">
-                    <img id="result-image" src="" alt="">
+
+            <div class="complete-body">
+                <!-- Single Image Preview -->
+                <div id="single-result-wrap" class="single-result-wrap" style="display: none;">
+                    <div class="result-image-container">
+                        <img id="single-result-image" src="" alt="">
+                    </div>
                 </div>
 
-                <div class="result-bottom-bar">
-                    <button type="button" class="btn primary-btn btn-save-main" id="btn-download-image">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <!-- Multi-Image Batch Gallery -->
+                <div id="batch-gallery" class="batch-gallery" style="display: none;"></div>
+            </div>
+
+            <!-- Format & Save Dock -->
+            <div class="complete-save-dock glass">
+                <div class="export-row">
+                    <span class="export-label">形式</span>
+                    <div class="format-pills" id="format-pills">
+                        <button type="button" class="format-pill active" data-format="image/jpeg">JPEG</button>
+                        <button type="button" class="format-pill" data-format="image/png">PNG</button>
+                        <button type="button" class="format-pill" data-format="image/webp">WebP</button>
+                    </div>
+                    <span class="export-size-badge" id="export-total-size"></span>
+                </div>
+
+                <div class="complete-bottom-bar">
+                    <button type="button" class="btn btn-save-main" id="btn-download-all">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
                         </svg>
-                        <span>保存</span>
-                    </button>
-                    <button type="button" class="btn icon-action-btn" id="btn-share-image" style="display: none;" aria-label="共有">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
-                            <polyline points="16 6 12 2 8 6"></polyline>
-                            <line x1="12" y1="2" x2="12" y2="15"></line>
-                        </svg>
-                    </button>
-                    <button type="button" class="btn outline-btn btn-next-item" id="btn-next-image" style="display: none;">
-                        <span>次へ</span>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                            <polyline points="12 5 19 12 12 19"></polyline>
-                        </svg>
+                        <span id="btn-download-all-label">保存</span>
                     </button>
                 </div>
             </div>
         </div>
 
-        <!-- Complete State (For Multi-Image Batch Save) -->
-        <div id="complete-view" class="view">
-            <div class="complete-content">
-                <div class="success-icon">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        <!-- Lightbox Preview Modal (for inspecting individual image in multi-image gallery) -->
+        <div id="lightbox-modal" class="lightbox-modal" aria-hidden="true">
+            <div class="lightbox-header">
+                <span class="lightbox-counter" id="lightbox-counter"></span>
+                <button type="button" class="btn icon-btn lightbox-close-btn" id="btn-lightbox-close" aria-label="閉じる">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>
-                </div>
+                </button>
+            </div>
+            <div class="lightbox-body" id="lightbox-body">
+                <img id="lightbox-image" src="" alt="">
+            </div>
+            <div class="lightbox-footer">
+                <button type="button" class="btn icon-btn lightbox-nav-btn" id="btn-lightbox-prev" aria-label="前の画像">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
+                <button type="button" class="btn outline-btn" id="btn-lightbox-edit">編集し直す</button>
+                <button type="button" class="btn icon-btn lightbox-nav-btn" id="btn-lightbox-next" aria-label="次の画像">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                </button>
+            </div>
+        </div>
 
-                <div id="batch-gallery" class="batch-gallery"></div>
-
-                <div class="complete-actions">
-                    <button type="button" class="btn primary-btn btn-large" id="btn-download-all">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                        <span>すべて保存</span>
-                    </button>
-                    <button type="button" class="btn outline-btn btn-large" id="btn-restart">新しく選ぶ</button>
-                </div>
+        <!-- Render Loading Overlay -->
+        <div id="render-loading" class="render-loading" aria-hidden="true">
+            <div class="render-loading-card">
+                <div class="spinner"></div>
+                <span id="render-loading-text">画像を仕上げています...</span>
             </div>
         </div>
 

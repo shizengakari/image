@@ -2,7 +2,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Views ---
     const uploadView = document.getElementById('upload-view');
     const editorView = document.getElementById('editor-view');
-    const resultView = document.getElementById('result-view');
     const completeView = document.getElementById('complete-view');
 
     // --- Upload Elements ---
@@ -11,16 +10,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Editor Header Elements ---
     const btnBack = document.getElementById('btn-back');
+    const progressNav = document.getElementById('progress-nav');
+    const btnPrevImage = document.getElementById('btn-prev-image');
     const progressIndicator = document.getElementById('progress-indicator');
-    const btnApplyAll = document.getElementById('btn-apply-all');
+    const btnNextEdit = document.getElementById('btn-next-edit');
+    const btnUndo = document.getElementById('btn-undo');
+    const btnRedo = document.getElementById('btn-redo');
     const btnProcess = document.getElementById('btn-process');
+    const btnProcessLabel = document.getElementById('btn-process-label');
+    const iconProcessCheck = document.getElementById('icon-process-check');
+    const iconProcessNext = document.getElementById('icon-process-next');
 
     // --- Workspace & Cropper Elements ---
     const container = document.getElementById('cropper-container');
     const workspaceCanvas = document.getElementById('image-workspace');
     const workspaceCtx = workspaceCanvas.getContext('2d', { willReadFrequently: true });
     const cropBoxEl = document.getElementById('crop-box');
-    const btnResetAll = document.getElementById('btn-reset-all');
+    const btnToggleZoom = document.getElementById('btn-toggle-zoom');
+    const iconZoomOut = document.getElementById('icon-zoom-out');
+    const iconZoomIn = document.getElementById('icon-zoom-in');
+    const zoomToggleLabel = document.getElementById('zoom-toggle-label');
     const btnCompare = document.getElementById('btn-compare');
 
     // --- Bottom Dock & Contextual Panel Elements ---
@@ -37,7 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const sliderCenterTick = document.getElementById('slider-center-tick');
     const btnStepMinus = document.getElementById('btn-step-minus');
     const btnStepPlus = document.getElementById('btn-step-plus');
-    const btnResetSingle = document.getElementById('btn-reset-single');
     const btnCloseSlider = document.getElementById('btn-close-slider');
     const btnCloseAspect = document.getElementById('btn-close-aspect');
     const btnCloseTransform = document.getElementById('btn-close-transform');
@@ -53,7 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const straightenFill = document.getElementById('straighten-fill');
     const btnStraightenMinus = document.getElementById('btn-straighten-minus');
     const btnStraightenPlus = document.getElementById('btn-straighten-plus');
-    const btnResetTransform = document.getElementById('btn-reset-transform');
 
     const filterPillsContainer = document.getElementById('filter-pills');
     const filterSliderWrapper = document.getElementById('filter-slider-wrapper');
@@ -66,18 +73,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const toolMenuBar = document.getElementById('tool-menu-bar');
     const toolItems = Array.from(document.querySelectorAll('.tool-item'));
 
-    // --- Result & Complete View Elements ---
-    const btnResultBack = document.getElementById('btn-result-back');
+    // --- Complete & Save View Elements ---
+    const btnCompleteBack = document.getElementById('btn-complete-back');
+    const completeTitlePill = document.getElementById('complete-title-pill');
     const btnRestartTop = document.getElementById('btn-restart-top');
-    const resultTitlePill = document.getElementById('result-title-pill');
-    const resultImage = document.getElementById('result-image');
-    const btnDownloadImage = document.getElementById('btn-download-image');
-    const btnShareImage = document.getElementById('btn-share-image');
-    const btnNextImage = document.getElementById('btn-next-image');
-
+    const singleResultWrap = document.getElementById('single-result-wrap');
+    const singleResultImage = document.getElementById('single-result-image');
     const batchGallery = document.getElementById('batch-gallery');
+
+    const formatPillsContainer = document.getElementById('format-pills');
+    const exportTotalSize = document.getElementById('export-total-size');
     const btnDownloadAll = document.getElementById('btn-download-all');
-    const btnRestart = document.getElementById('btn-restart');
+    const btnDownloadAllLabel = document.getElementById('btn-download-all-label');
+
+    // --- Lightbox & Loading Overlay ---
+    const lightboxModal = document.getElementById('lightbox-modal');
+    const lightboxCounter = document.getElementById('lightbox-counter');
+    const lightboxBody = document.getElementById('lightbox-body');
+    const lightboxImage = document.getElementById('lightbox-image');
+    const btnLightboxClose = document.getElementById('btn-lightbox-close');
+    const btnLightboxPrev = document.getElementById('btn-lightbox-prev');
+    const btnLightboxNext = document.getElementById('btn-lightbox-next');
+    const btnLightboxEdit = document.getElementById('btn-lightbox-edit');
+    const renderLoading = document.getElementById('render-loading');
+    const renderLoadingText = document.getElementById('render-loading-text');
+
     const toastEl = document.getElementById('toast');
 
     // --- Adjustment Tool Metadata ---
@@ -95,7 +115,14 @@ document.addEventListener('DOMContentLoaded', () => {
         vignette:   { label: 'ビネット', min: -100, max: 100, default: 0, bidirectional: true }
     };
 
+    const FORMAT_META = {
+        'image/jpeg': { ext: 'jpg', label: 'JPEG', hasQuality: true },
+        'image/png':  { ext: 'png', label: 'PNG',  hasQuality: false },
+        'image/webp': { ext: 'webp', label: 'WebP', hasQuality: true }
+    };
+
     const DEFAULT_ASPECT_MODE = '0.8'; // 4:5
+    const MAX_HISTORY_STEPS = 50;
 
     const createDefaultState = () => ({
         aspectMode: DEFAULT_ASPECT_MODE,
@@ -123,11 +150,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let imageFiles = [];
     let currentFileIndex = 0;
     let imageStates = [];
-    let editedResults = [];
+    let imageHistories = [];
+    let thumbUrls = [];
+    let encodedOutputs = [];
     let currentSourceImage = null;
     let currentObjectUrl = null;
     let activeTool = null;
     let isComparing = false;
+
+    // --- Export Options State (Always Maximum Quality) ---
+    let exportFormat = 'image/jpeg';
+    const EXPORT_QUALITY = 1.0;
+    let encodeGeneration = 0;
+    let lightboxIndex = -1;
 
     // --- Preview Base Cache ---
     const basePreviewCanvas = document.createElement('canvas');
@@ -136,22 +171,55 @@ document.addEventListener('DOMContentLoaded', () => {
     let workingPreviewImageData = null;
     let previewRafId = null;
 
-    // --- Cropper Display Geometry ---
+    // --- Cropper Display & Zoom Geometry ---
+    // viewMode: 'full' shows entire image; 'crop' maximizes the cropped area to fill screen
+    let viewMode = 'full';
     let orientedWidth = 0;
     let orientedHeight = 0;
     let imgRect = { x: 0, y: 0, w: 0, h: 0 };
     let cropBox = { x: 0, y: 0, w: 0, h: 0 };
+    let layoutAnimTimer = null;
 
-    // --- Pointer / Drag Interaction State ---
+    // --- Pointer / Drag / Pinch Interaction State ---
+    const activePointers = new Map();
     let isDraggingCrop = false;
-    let dragType = null;
+    let isPinching = false;
+    let dragType = null; // 'move' | 'pan-image' | 'nw'|'ne'|'sw'|'se'|'n'|'s'|'e'|'w'
     let activePointerId = null;
     let dragStartX = 0;
     let dragStartY = 0;
     let initialCropBox = null;
+    let initialImgRect = null;
+    let gestureSnapshot = null;
+    let pinchStartDist = 0;
+    let pinchStartMid = { x: 0, y: 0 };
+    let pinchStartNormCrop = null;
+    let pinchStartImgRect = null;
+    let lastTapTime = 0;
+    let lastTapPos = { x: 0, y: 0 };
+    let wheelSnapshot = null;
+    let wheelCommitTimer = null;
+    let pendingSliderSnapshot = null;
 
     // --- Utility Functions ---
     const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+
+    const supportsWebPEncode = (() => {
+        try {
+            const c = document.createElement('canvas');
+            c.width = 1;
+            c.height = 1;
+            return c.toDataURL('image/webp').startsWith('data:image/webp');
+        } catch (_) {
+            return false;
+        }
+    })();
+
+    const webpPill = formatPillsContainer ? formatPillsContainer.querySelector('[data-format="image/webp"]') : null;
+    if (webpPill && !supportsWebPEncode) {
+        webpPill.disabled = true;
+        webpPill.title = 'このブラウザではWebP出力に対応していません';
+    }
 
     let toastTimer = null;
     const showToast = (message) => {
@@ -164,11 +232,118 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1800);
     };
 
+    const formatBytes = (bytes) => {
+        if (!bytes || bytes < 0) return '0 B';
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    };
+
     const getCurrentState = () => {
         if (!imageStates[currentFileIndex]) {
             imageStates[currentFileIndex] = createDefaultState();
         }
         return imageStates[currentFileIndex];
+    };
+
+    const cloneState = (s) => ({
+        ...s,
+        normCrop: s.normCrop ? { ...s.normCrop } : null
+    });
+
+    const statesEqual = (a, b) => {
+        if (!a || !b) return false;
+        const keys = [
+            'aspectMode', 'rotation90', 'flipX', 'flipY', 'straighten',
+            'filter', 'filterStrength', ...Object.keys(ADJUSTMENT_TOOLS)
+        ];
+        for (const k of keys) {
+            if (a[k] !== b[k]) return false;
+        }
+        if (!!a.normCrop !== !!b.normCrop) return false;
+        if (a.normCrop && b.normCrop) {
+            const eps = 1e-4;
+            if (
+                Math.abs(a.normCrop.x - b.normCrop.x) > eps ||
+                Math.abs(a.normCrop.y - b.normCrop.y) > eps ||
+                Math.abs(a.normCrop.w - b.normCrop.w) > eps ||
+                Math.abs(a.normCrop.h - b.normCrop.h) > eps
+            ) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const getHistoryForIndex = (idx = currentFileIndex) => {
+        if (!imageHistories[idx]) {
+            imageHistories[idx] = { undo: [], redo: [] };
+        }
+        return imageHistories[idx];
+    };
+
+    const updateHistoryButtons = () => {
+        const hist = getHistoryForIndex(currentFileIndex);
+        if (btnUndo) btnUndo.disabled = hist.undo.length === 0;
+        if (btnRedo) btnRedo.disabled = hist.redo.length === 0;
+    };
+
+    const pushHistorySnapshot = (prevState, prevViewMode = viewMode, idx = currentFileIndex) => {
+        const current = imageStates[idx];
+        if (!prevState || !current || statesEqual(prevState, current)) return false;
+        const hist = getHistoryForIndex(idx);
+        hist.undo.push({
+            state: cloneState(prevState),
+            viewMode: prevViewMode
+        });
+        if (hist.undo.length > MAX_HISTORY_STEPS) {
+            hist.undo.shift();
+        }
+        hist.redo = [];
+        if (idx === currentFileIndex) {
+            updateHistoryButtons();
+        }
+        return true;
+    };
+
+    const applySnapshotEntry = (entry) => {
+        const prev = getCurrentState();
+        const next = cloneState(entry.state);
+        const transformChanged = (
+            prev.rotation90 !== next.rotation90 ||
+            prev.flipX !== next.flipX ||
+            prev.flipY !== next.flipY ||
+            prev.straighten !== next.straighten
+        );
+        imageStates[currentFileIndex] = next;
+        viewMode = entry.viewMode || 'full';
+        updateOrientedDimensions();
+        if (transformChanged) {
+            rebuildPreviewBase();
+        } else {
+            schedulePreviewRender();
+        }
+        relayoutWorkspace(true);
+        updateToolIndicators();
+        updateHistoryButtons();
+    };
+
+    const performUndo = () => {
+        const hist = getHistoryForIndex(currentFileIndex);
+        if (hist.undo.length === 0) return;
+        const currentEntry = { state: cloneState(getCurrentState()), viewMode };
+        const prevEntry = hist.undo.pop();
+        hist.redo.push(currentEntry);
+        applySnapshotEntry(prevEntry);
+    };
+
+    const performRedo = () => {
+        const hist = getHistoryForIndex(currentFileIndex);
+        if (hist.redo.length === 0) return;
+        const currentEntry = { state: cloneState(getCurrentState()), viewMode };
+        const nextEntry = hist.redo.pop();
+        hist.undo.push(currentEntry);
+        applySnapshotEntry(nextEntry);
     };
 
     const formatSignedValue = (val, suffix = '') => {
@@ -177,33 +352,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return num > 0 ? `+${num}${suffix}` : `${num}${suffix}`;
     };
 
-    const canUseWebShareFiles = () => {
-        try {
-            if (!navigator.canShare || !navigator.share || typeof File === 'undefined') return false;
-            const testFile = new File([new Uint8Array(1)], 'test.jpg', { type: 'image/jpeg' });
-            return navigator.canShare({ files: [testFile] });
-        } catch (e) {
-            return false;
-        }
-    };
-
-    const dataURLToBlob = (dataURL) => {
-        const parts = dataURL.split(',');
-        const mimeMatch = parts[0].match(/:(.*?);/);
-        const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-        const bstr = atob(parts[1]);
-        let n = bstr.length;
-        const u8arr = new Uint8Array(n);
-        while (n--) {
-            u8arr[n] = bstr.charCodeAt(n);
-        }
-        return new Blob([u8arr], { type: mime });
-    };
-
-    const buildSafeFilename = (originalFile, index) => {
-        const rawName = (originalFile && originalFile.name) ? originalFile.name : `photo-${index + 1}`;
-        const baseName = rawName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_\-\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf]/g, '_');
-        return `${baseName || 'photo'}_edited.jpg`;
+    const buildSafeFilename = (originalFile, index, format = exportFormat) => {
+        const meta = FORMAT_META[format] || FORMAT_META['image/jpeg'];
+        const rawName = (originalFile && originalFile.name) ? originalFile.name : `photo_${index + 1}`;
+        const baseName = rawName.replace(/\.[^/.]+$/, '').replace(/[\\/:*?"<>|]/g, '_');
+        return `${baseName || `photo_${index + 1}`}_edited.${meta.ext}`;
     };
 
     const triggerBlobDownload = (blob, filename) => {
@@ -211,31 +364,60 @@ document.addEventListener('DOMContentLoaded', () => {
         const link = document.createElement('a');
         link.href = url;
         link.download = filename;
-        link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(url), 15000);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
 
-    // --- View Navigation ---
+    const revokeEncodedUrls = () => {
+        encodedOutputs.forEach(item => {
+            if (item && item.objectUrl) {
+                URL.revokeObjectURL(item.objectUrl);
+            }
+        });
+        encodedOutputs = [];
+    };
+
+    const revokeThumbUrls = () => {
+        thumbUrls.forEach(url => {
+            if (url) URL.revokeObjectURL(url);
+        });
+        thumbUrls = [];
+    };
+
     const showView = (viewEl) => {
-        [uploadView, editorView, resultView, completeView].forEach(v => v.classList.remove('active'));
-        viewEl.classList.add('active');
+        [uploadView, editorView, completeView].forEach(v => {
+            if (v) v.classList.toggle('active', v === viewEl);
+        });
+    };
+
+    const resetExportOptionsToDefault = () => {
+        exportFormat = 'image/jpeg';
+        if (formatPillsContainer) {
+            Array.from(formatPillsContainer.querySelectorAll('.format-pill')).forEach(p => {
+                p.classList.toggle('active', p.getAttribute('data-format') === exportFormat);
+            });
+        }
     };
 
     const resetApp = () => {
         closeActivePanel();
+        closeLightbox();
         if (currentObjectUrl) {
             URL.revokeObjectURL(currentObjectUrl);
             currentObjectUrl = null;
         }
+        revokeEncodedUrls();
+        revokeThumbUrls();
         currentSourceImage = null;
         imageUpload.value = '';
         imageFiles = [];
         currentFileIndex = 0;
         imageStates = [];
-        editedResults = [];
+        imageHistories = [];
+        viewMode = 'full';
+        resetExportOptionsToDefault();
         showView(uploadView);
     };
 
@@ -267,14 +449,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     };
 
-    const isAdjustmentsModified = (state) => {
-        if (!state) return false;
-        if (hasPixelAdjustments(state)) return true;
-        if (state.rotation90 !== 0 || state.flipX || state.flipY || state.straighten !== 0) return true;
-        if (state.aspectMode !== DEFAULT_ASPECT_MODE) return true;
-        return false;
-    };
-
     const updateToolIndicators = () => {
         const state = getCurrentState();
         toolItems.forEach(btn => {
@@ -293,8 +467,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             btn.classList.toggle('modified', modified);
         });
-
-        btnResetAll.style.display = isAdjustmentsModified(state) ? 'flex' : 'none';
 
         Array.from(aspectPillsContainer.querySelectorAll('.aspect-pill')).forEach(pill => {
             pill.classList.toggle('active', pill.getAttribute('data-ratio') === state.aspectMode);
@@ -331,6 +503,8 @@ document.addEventListener('DOMContentLoaded', () => {
             sliderCenterTick.style.display = meta.bidirectional ? 'block' : 'none';
             updateSliderTrackFill(activeSlider, sliderFill, meta.bidirectional);
         }
+
+        updateHistoryButtons();
     };
 
     // --- Bottom Menu & Contextual Bar Open / Close ---
@@ -369,8 +543,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- Direct One-Finger / Pointer Horizontal Scroll Support ---
-    // Native touch-action: pan-x handles 1-finger touch momentum on iOS/Android.
-    // This helper adds smooth 1-finger mouse drag & wheel horizontal scrolling on desktop/trackpads.
     const enableHorizontalScroll = (scrollEl) => {
         if (!scrollEl) return;
         let isDown = false;
@@ -379,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let moved = false;
 
         scrollEl.addEventListener('pointerdown', (e) => {
-            if (e.pointerType === 'touch') return; // Let native touch-action: pan-x handle touch with inertia
+            if (e.pointerType === 'touch') return;
             isDown = true;
             moved = false;
             startX = e.clientX;
@@ -704,7 +876,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateOrientedDimensions();
         const state = getCurrentState();
 
-        const maxPreviewDim = 920;
+        const maxPreviewDim = 1440;
         const pScale = Math.min(1, maxPreviewDim / Math.max(orientedWidth, orientedHeight));
         const pW = Math.max(1, Math.round(orientedWidth * pScale));
         const pH = Math.max(1, Math.round(orientedHeight * pScale));
@@ -741,7 +913,7 @@ document.addEventListener('DOMContentLoaded', () => {
         previewRafId = requestAnimationFrame(renderPreviewNow);
     };
 
-    // --- Cropper Layout & Normalized Crop Mapping ---
+    // --- Cropper Layout, Zoom-to-Crop & Normalized Crop Mapping ---
     const getNumericAspectRatio = (aspectMode) => {
         if (aspectMode === 'free') return null;
         if (aspectMode === 'original') {
@@ -777,6 +949,20 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     };
 
+    const renderWorkspaceCanvasDOM = () => {
+        workspaceCanvas.style.width = `${imgRect.w}px`;
+        workspaceCanvas.style.height = `${imgRect.h}px`;
+        workspaceCanvas.style.left = `${imgRect.x}px`;
+        workspaceCanvas.style.top = `${imgRect.y}px`;
+    };
+
+    const renderCropBoxDOM = () => {
+        cropBoxEl.style.left = `${cropBox.x}px`;
+        cropBoxEl.style.top = `${cropBox.y}px`;
+        cropBoxEl.style.width = `${cropBox.w}px`;
+        cropBoxEl.style.height = `${cropBox.h}px`;
+    };
+
     const syncCropBoxFromNorm = () => {
         const state = getCurrentState();
         if (!state.normCrop) {
@@ -793,62 +979,157 @@ document.addEventListener('DOMContentLoaded', () => {
     const syncNormFromCropBox = () => {
         const state = getCurrentState();
         if (imgRect.w <= 0 || imgRect.h <= 0) return;
+        const w = clamp(cropBox.w / imgRect.w, 0.04, 1);
+        const h = clamp(cropBox.h / imgRect.h, 0.04, 1);
         state.normCrop = {
-            x: clamp((cropBox.x - imgRect.x) / imgRect.w, 0, 1),
-            y: clamp((cropBox.y - imgRect.y) / imgRect.h, 0, 1),
-            w: clamp(cropBox.w / imgRect.w, 0.05, 1),
-            h: clamp(cropBox.h / imgRect.h, 0.05, 1)
+            x: clamp((cropBox.x - imgRect.x) / imgRect.w, 0, 1 - w),
+            y: clamp((cropBox.y - imgRect.y) / imgRect.h, 0, 1 - h),
+            w,
+            h
         };
     };
 
-    const renderCropBoxDOM = () => {
-        cropBoxEl.style.left = `${cropBox.x}px`;
-        cropBoxEl.style.top = `${cropBox.y}px`;
-        cropBoxEl.style.width = `${cropBox.w}px`;
-        cropBoxEl.style.height = `${cropBox.h}px`;
+    const updateZoomToggleUI = () => {
+        if (!btnToggleZoom) return;
+        const isCropMode = viewMode === 'crop';
+        btnToggleZoom.classList.toggle('active', isCropMode);
+        if (iconZoomOut) iconZoomOut.style.display = isCropMode ? 'block' : 'none';
+        if (iconZoomIn) iconZoomIn.style.display = isCropMode ? 'none' : 'block';
+        if (zoomToggleLabel) zoomToggleLabel.textContent = isCropMode ? '全体' : '拡大';
+        btnToggleZoom.setAttribute('aria-label', isCropMode ? '全体表示に切替' : '切り抜き部分を最大表示');
     };
 
-    const relayoutWorkspace = () => {
+    const clearLayoutAnimation = () => {
+        if (layoutAnimTimer) {
+            clearTimeout(layoutAnimTimer);
+            layoutAnimTimer = null;
+        }
+        workspaceCanvas.classList.remove('animate-layout');
+        cropBoxEl.classList.remove('animate-layout');
+    };
+
+    const relayoutWorkspace = (animate = false) => {
         if (!currentSourceImage || !orientedWidth || !orientedHeight) return;
         const contW = container.clientWidth;
         const contH = container.clientHeight;
         if (contW <= 0 || contH <= 0) return;
+
+        const state = getCurrentState();
+        if (!state.normCrop) {
+            resetNormCropForAspect(state.aspectMode);
+        }
+        const nc = state.normCrop;
 
         const padX = 24;
         const padY = 24;
         const availW = Math.max(80, contW - padX * 2);
         const availH = Math.max(80, contH - padY * 2);
 
-        const scale = Math.min(availW / orientedWidth, availH / orientedHeight);
-        imgRect.w = orientedWidth * scale;
-        imgRect.h = orientedHeight * scale;
-        imgRect.x = (contW - imgRect.w) / 2;
-        imgRect.y = (contH - imgRect.h) / 2;
+        if (animate) {
+            clearLayoutAnimation();
+            workspaceCanvas.classList.add('animate-layout');
+            cropBoxEl.classList.add('animate-layout');
+            layoutAnimTimer = setTimeout(() => {
+                workspaceCanvas.classList.remove('animate-layout');
+                cropBoxEl.classList.remove('animate-layout');
+                layoutAnimTimer = null;
+            }, 300);
+        } else {
+            clearLayoutAnimation();
+        }
 
-        workspaceCanvas.style.width = `${imgRect.w}px`;
-        workspaceCanvas.style.height = `${imgRect.h}px`;
-        workspaceCanvas.style.left = `${imgRect.x}px`;
-        workspaceCanvas.style.top = `${imgRect.y}px`;
+        if (viewMode === 'crop') {
+            const cropOrientedW = Math.max(1e-4, nc.w) * orientedWidth;
+            const cropOrientedH = Math.max(1e-4, nc.h) * orientedHeight;
+            const scale = Math.min(availW / cropOrientedW, availH / cropOrientedH);
 
-        syncCropBoxFromNorm();
+            cropBox.w = cropOrientedW * scale;
+            cropBox.h = cropOrientedH * scale;
+            cropBox.x = (contW - cropBox.w) / 2;
+            cropBox.y = (contH - cropBox.h) / 2;
+
+            imgRect.w = orientedWidth * scale;
+            imgRect.h = orientedHeight * scale;
+            imgRect.x = cropBox.x - nc.x * imgRect.w;
+            imgRect.y = cropBox.y - nc.y * imgRect.h;
+
+            renderWorkspaceCanvasDOM();
+            renderCropBoxDOM();
+        } else {
+            const scale = Math.min(availW / orientedWidth, availH / orientedHeight);
+            imgRect.w = orientedWidth * scale;
+            imgRect.h = orientedHeight * scale;
+            imgRect.x = (contW - imgRect.w) / 2;
+            imgRect.y = (contH - imgRect.h) / 2;
+
+            renderWorkspaceCanvasDOM();
+            syncCropBoxFromNorm();
+        }
+
+        updateZoomToggleUI();
     };
 
     if (typeof ResizeObserver !== 'undefined') {
         const ro = new ResizeObserver(() => {
             if (editorView.classList.contains('active')) {
-                relayoutWorkspace();
+                relayoutWorkspace(false);
             }
         });
         ro.observe(container);
     } else {
         window.addEventListener('resize', () => {
             if (editorView.classList.contains('active')) {
-                relayoutWorkspace();
+                relayoutWorkspace(false);
             }
         });
     }
 
-    // --- Interactive Crop Box Dragging ---
+    const toggleViewMode = () => {
+        viewMode = (viewMode === 'crop') ? 'full' : 'crop';
+        relayoutWorkspace(true);
+    };
+
+    if (btnToggleZoom) {
+        btnToggleZoom.addEventListener('click', toggleViewMode);
+    }
+
+    // --- Zoom / Pinch Helper (aspect-ratio safe) ---
+    const applyZoomToNormCrop = (baseNormCrop, scaleRatio, panNormDx = 0, panNormDy = 0) => {
+        const state = getCurrentState();
+        if (!orientedWidth || !orientedHeight) return;
+        const nc = baseNormCrop || state.normCrop;
+        const lockedRatio = getNumericAspectRatio(state.aspectMode);
+        const imgAspect = orientedWidth / orientedHeight;
+
+        const minNorm = Math.max(0.05, 44 / Math.min(orientedWidth, orientedHeight));
+        let nw, nh;
+
+        if (lockedRatio) {
+            const maxW = Math.min(1, lockedRatio / imgAspect);
+            const minW = Math.max(minNorm, minNorm * (lockedRatio / imgAspect));
+            nw = clamp(nc.w / scaleRatio, Math.min(minW, maxW), maxW);
+            nh = (nw * imgAspect) / lockedRatio;
+            if (nh > 1) {
+                nh = 1;
+                nw = (nh * lockedRatio) / imgAspect;
+            }
+        } else {
+            const maxFactor = Math.min(1 / nc.w, 1 / nc.h);
+            const minFactor = Math.max(minNorm / nc.w, minNorm / nc.h);
+            const factor = clamp(1 / scaleRatio, Math.min(minFactor, maxFactor), maxFactor);
+            nw = nc.w * factor;
+            nh = nc.h * factor;
+        }
+
+        const cx = nc.x + nc.w / 2 + panNormDx;
+        const cy = nc.y + nc.h / 2 + panNormDy;
+        const nx = clamp(cx - nw / 2, 0, 1 - nw);
+        const ny = clamp(cy - nh / 2, 0, 1 - nh);
+
+        state.normCrop = { x: nx, y: ny, w: nw, h: nh };
+    };
+
+    // --- Interactive Crop Box Dragging, Image Panning & Pinch Zoom ---
     const getEventClientPos = (e) => {
         if (e.touches && e.touches.length > 0) {
             return { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -856,37 +1137,141 @@ document.addEventListener('DOMContentLoaded', () => {
         return { x: e.clientX, y: e.clientY };
     };
 
+    const getTwoPointerMetrics = () => {
+        const pts = Array.from(activePointers.values());
+        if (pts.length < 2) return null;
+        const dx = pts[1].x - pts[0].x;
+        const dy = pts[1].y - pts[0].y;
+        return {
+            dist: Math.hypot(dx, dy),
+            mid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
+        };
+    };
+
+    const normCropChanged = (a, b) => {
+        if (!a || !b) return true;
+        const eps = 1e-4;
+        return (
+            Math.abs(a.x - b.x) > eps ||
+            Math.abs(a.y - b.y) > eps ||
+            Math.abs(a.w - b.w) > eps ||
+            Math.abs(a.h - b.h) > eps
+        );
+    };
+
     const onCropDown = (e) => {
         if (!editorView.classList.contains('active')) return;
         if (e.target.closest('.workspace-floating-bar')) return;
 
+        const pos = getEventClientPos(e);
+        const pid = e.pointerId !== undefined ? e.pointerId : 'mouse';
+        activePointers.set(pid, { x: pos.x, y: pos.y });
+
+        if (activePointers.size === 2) {
+            if (e.cancelable) e.preventDefault();
+            clearLayoutAnimation();
+            isDraggingCrop = false;
+            dragType = null;
+            cropBoxEl.classList.remove('dragging', 'panning');
+
+            const state = getCurrentState();
+            if (!gestureSnapshot) {
+                gestureSnapshot = { state: cloneState(state), viewMode };
+            }
+            const metrics = getTwoPointerMetrics();
+            if (metrics) {
+                isPinching = true;
+                pinchStartDist = Math.max(10, metrics.dist);
+                pinchStartMid = metrics.mid;
+                pinchStartNormCrop = { ...state.normCrop };
+                pinchStartImgRect = { ...imgRect };
+            }
+            return;
+        }
+
+        if (activePointers.size > 2) return;
+
         const handleEl = e.target.closest('.handle');
+        const insideCropBox = !!e.target.closest('#crop-box');
+
+        // Double-tap / double-click on workspace (not on handle) toggles Full <-> Crop zoom
+        if (!handleEl) {
+            const now = Date.now();
+            const tapDist = Math.hypot(pos.x - lastTapPos.x, pos.y - lastTapPos.y);
+            if (now - lastTapTime < 280 && tapDist < 24) {
+                if (e.cancelable) e.preventDefault();
+                lastTapTime = 0;
+                isDraggingCrop = false;
+                dragType = null;
+                gestureSnapshot = null;
+                toggleViewMode();
+                return;
+            }
+            lastTapTime = now;
+            lastTapPos = pos;
+        }
+
         if (handleEl) {
             dragType = handleEl.getAttribute('data-dir');
-        } else if (e.target.closest('#crop-box')) {
+        } else if (viewMode === 'crop') {
+            dragType = 'pan-image';
+        } else if (insideCropBox) {
             dragType = 'move';
         } else {
             return;
         }
 
         if (e.cancelable) e.preventDefault();
+        clearLayoutAnimation();
+
+        const state = getCurrentState();
+        gestureSnapshot = { state: cloneState(state), viewMode };
 
         isDraggingCrop = true;
-        activePointerId = e.pointerId !== undefined ? e.pointerId : null;
-        if (activePointerId !== null && container.setPointerCapture) {
-            try { container.setPointerCapture(activePointerId); } catch (_) {}
+        activePointerId = pid;
+        if (e.pointerId !== undefined && container.setPointerCapture) {
+            try { container.setPointerCapture(e.pointerId); } catch (_) {}
         }
 
-        const pos = getEventClientPos(e);
         dragStartX = pos.x;
         dragStartY = pos.y;
         initialCropBox = { ...cropBox };
+        initialImgRect = { ...imgRect };
         cropBoxEl.classList.add('dragging');
+        if (dragType === 'pan-image') {
+            cropBoxEl.classList.add('panning');
+        }
     };
 
     const onCropMove = (e) => {
+        const pid = e.pointerId !== undefined ? e.pointerId : 'mouse';
+        if (activePointers.has(pid)) {
+            const p = getEventClientPos(e);
+            activePointers.set(pid, { x: p.x, y: p.y });
+        }
+
+        if (isPinching && activePointers.size >= 2) {
+            if (e.cancelable) e.preventDefault();
+            const metrics = getTwoPointerMetrics();
+            if (!metrics || !pinchStartNormCrop || !pinchStartImgRect) return;
+
+            const scaleRatio = metrics.dist / pinchStartDist;
+            const panDx = metrics.mid.x - pinchStartMid.x;
+            const panDy = metrics.mid.y - pinchStartMid.y;
+            const panNormDx = -panDx / Math.max(1, pinchStartImgRect.w * scaleRatio);
+            const panNormDy = -panDy / Math.max(1, pinchStartImgRect.h * scaleRatio);
+
+            applyZoomToNormCrop(pinchStartNormCrop, scaleRatio, panNormDx, panNormDy);
+            viewMode = 'crop';
+            relayoutWorkspace(false);
+            if (getCurrentState().vignette !== 0) {
+                schedulePreviewRender();
+            }
+            return;
+        }
+
         if (!isDraggingCrop || !initialCropBox) return;
-        if (activePointerId !== null && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
+        if (activePointerId !== null && pid !== activePointerId) return;
         if (e.cancelable) e.preventDefault();
 
         const pos = getEventClientPos(e);
@@ -896,6 +1281,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const state = getCurrentState();
         const lockedRatio = getNumericAspectRatio(state.aspectMode);
         const minSide = 44;
+
+        if (dragType === 'pan-image' && initialImgRect) {
+            const minX = Math.min(cropBox.x, cropBox.x + cropBox.w - initialImgRect.w);
+            const maxX = Math.max(cropBox.x, cropBox.x + cropBox.w - initialImgRect.w);
+            const minY = Math.min(cropBox.y, cropBox.y + cropBox.h - initialImgRect.h);
+            const maxY = Math.max(cropBox.y, cropBox.y + cropBox.h - initialImgRect.h);
+
+            imgRect.x = clamp(initialImgRect.x + dx, minX, maxX);
+            imgRect.y = clamp(initialImgRect.y + dy, minY, maxY);
+            renderWorkspaceCanvasDOM();
+            syncNormFromCropBox();
+            if (state.vignette !== 0) {
+                schedulePreviewRender();
+            }
+            return;
+        }
 
         if (dragType === 'move') {
             cropBox.x = clamp(initialCropBox.x + dx, imgRect.x, imgRect.x + imgRect.w - initialCropBox.w);
@@ -991,12 +1392,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const onCropUp = () => {
+    const onCropUp = (e) => {
+        const pid = (e && e.pointerId !== undefined) ? e.pointerId : 'mouse';
+        if (e && e.type === 'blur') {
+            activePointers.clear();
+        } else {
+            activePointers.delete(pid);
+        }
+
+        if (isPinching && activePointers.size < 2) {
+            isPinching = false;
+            pinchStartNormCrop = null;
+            pinchStartImgRect = null;
+            const state = getCurrentState();
+            if (gestureSnapshot && normCropChanged(gestureSnapshot.state.normCrop, state.normCrop)) {
+                pushHistorySnapshot(gestureSnapshot.state, gestureSnapshot.viewMode);
+            }
+            gestureSnapshot = null;
+            relayoutWorkspace(true);
+            return;
+        }
+
         if (!isDraggingCrop) return;
         isDraggingCrop = false;
+        const finishedDragType = dragType;
         dragType = null;
         activePointerId = null;
-        cropBoxEl.classList.remove('dragging');
+        cropBoxEl.classList.remove('dragging', 'panning');
+
+        const state = getCurrentState();
+        const changed = gestureSnapshot && normCropChanged(gestureSnapshot.state.normCrop, state.normCrop);
+        if (changed) {
+            pushHistorySnapshot(gestureSnapshot.state, gestureSnapshot.viewMode);
+            // Resize or move completion -> maximize the cropped region to fill screen!
+            viewMode = 'crop';
+            relayoutWorkspace(true);
+        } else if (finishedDragType === 'pan-image') {
+            relayoutWorkspace(false);
+        }
+        gestureSnapshot = null;
     };
 
     if (window.PointerEvent) {
@@ -1016,7 +1450,49 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('blur', onCropUp);
     container.addEventListener('dragstart', e => e.preventDefault());
 
+    // Mouse Wheel Zoom on Workspace
+    container.addEventListener('wheel', (e) => {
+        if (!editorView.classList.contains('active') || !currentSourceImage) return;
+        if (e.target.closest('.workspace-floating-bar')) return;
+        e.preventDefault();
+
+        const state = getCurrentState();
+        if (!wheelSnapshot) {
+            wheelSnapshot = { state: cloneState(state), viewMode };
+        }
+        if (wheelCommitTimer) clearTimeout(wheelCommitTimer);
+
+        const zoomFactor = e.deltaY < 0 ? 1.09 : (1 / 1.09);
+        applyZoomToNormCrop(state.normCrop, zoomFactor, 0, 0);
+        viewMode = 'crop';
+        relayoutWorkspace(false);
+        if (state.vignette !== 0) {
+            schedulePreviewRender();
+        }
+
+        wheelCommitTimer = setTimeout(() => {
+            if (wheelSnapshot && normCropChanged(wheelSnapshot.state.normCrop, getCurrentState().normCrop)) {
+                pushHistorySnapshot(wheelSnapshot.state, wheelSnapshot.viewMode);
+            }
+            wheelSnapshot = null;
+            wheelCommitTimer = null;
+        }, 350);
+    }, { passive: false });
+
     // --- Adjustment Sliders & Controls Wiring ---
+    const beginSliderGesture = () => {
+        if (!pendingSliderSnapshot) {
+            pendingSliderSnapshot = { state: cloneState(getCurrentState()), viewMode };
+        }
+    };
+
+    const commitSliderGesture = () => {
+        if (pendingSliderSnapshot) {
+            pushHistorySnapshot(pendingSliderSnapshot.state, pendingSliderSnapshot.viewMode);
+            pendingSliderSnapshot = null;
+        }
+    };
+
     const setupStepButton = (btn, actionFn) => {
         if (!btn) return;
         let timer = null;
@@ -1031,13 +1507,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 clearInterval(interval);
                 interval = null;
             }
+            commitSliderGesture();
         };
 
         btn.addEventListener('pointerdown', (e) => {
             if (e.button !== 0) return;
             e.preventDefault();
+            beginSliderGesture();
             actionFn();
-            stop();
+            if (timer) clearTimeout(timer);
+            if (interval) clearInterval(interval);
             timer = setTimeout(() => {
                 interval = setInterval(() => {
                     actionFn();
@@ -1052,7 +1531,9 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
+                beginSliderGesture();
                 actionFn();
+                commitSliderGesture();
             }
         });
     };
@@ -1083,19 +1564,26 @@ document.addEventListener('DOMContentLoaded', () => {
         schedulePreviewRender();
     };
 
-    activeSlider.addEventListener('input', onActiveSliderInput);
-    activeSlider.addEventListener('change', onActiveSliderInput);
-
-    const resetActiveSingleTool = () => {
+    activeSlider.addEventListener('pointerdown', beginSliderGesture);
+    activeSlider.addEventListener('mousedown', beginSliderGesture);
+    activeSlider.addEventListener('touchstart', beginSliderGesture, { passive: true });
+    activeSlider.addEventListener('input', () => {
+        beginSliderGesture();
+        onActiveSliderInput();
+    });
+    activeSlider.addEventListener('change', () => {
+        onActiveSliderInput();
+        commitSliderGesture();
+    });
+    activeSlider.addEventListener('dblclick', () => {
         if (!activeTool || !ADJUSTMENT_TOOLS[activeTool]) return;
-        const state = getCurrentState();
+        const snap = { state: cloneState(getCurrentState()), viewMode };
         const meta = ADJUSTMENT_TOOLS[activeTool];
-        state[activeTool] = meta.default;
+        getCurrentState()[activeTool] = meta.default;
         activeSlider.value = meta.default;
         onActiveSliderInput();
-    };
-    btnResetSingle.addEventListener('click', resetActiveSingleTool);
-    activeSlider.addEventListener('dblclick', resetActiveSingleTool);
+        pushHistorySnapshot(snap.state, snap.viewMode);
+    });
 
     // Aspect Ratio Selection
     aspectPillsContainer.addEventListener('click', (e) => {
@@ -1103,9 +1591,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!pill) return;
         const ratioMode = pill.getAttribute('data-ratio');
         const state = getCurrentState();
+        const prev = { state: cloneState(state), viewMode };
+
         state.aspectMode = ratioMode;
         resetNormCropForAspect(ratioMode);
-        syncCropBoxFromNorm();
+        viewMode = 'full';
+        pushHistorySnapshot(prev.state, prev.viewMode);
+
+        relayoutWorkspace(true);
         updateToolIndicators();
         if (state.vignette !== 0) schedulePreviewRender();
     });
@@ -1113,42 +1606,52 @@ document.addEventListener('DOMContentLoaded', () => {
     // Transform Controls
     btnRotateCCW.addEventListener('click', () => {
         const state = getCurrentState();
+        const prev = { state: cloneState(state), viewMode };
         state.rotation90 = (state.rotation90 + 270) % 360;
         updateOrientedDimensions();
         if (state.aspectMode === 'free') {
             rotateNormCrop(false);
         } else {
             resetNormCropForAspect(state.aspectMode);
+            viewMode = 'full';
         }
+        pushHistorySnapshot(prev.state, prev.viewMode);
         rebuildPreviewBase();
-        relayoutWorkspace();
+        relayoutWorkspace(true);
         updateToolIndicators();
     });
 
     btnRotateCW.addEventListener('click', () => {
         const state = getCurrentState();
+        const prev = { state: cloneState(state), viewMode };
         state.rotation90 = (state.rotation90 + 90) % 360;
         updateOrientedDimensions();
         if (state.aspectMode === 'free') {
             rotateNormCrop(true);
         } else {
             resetNormCropForAspect(state.aspectMode);
+            viewMode = 'full';
         }
+        pushHistorySnapshot(prev.state, prev.viewMode);
         rebuildPreviewBase();
-        relayoutWorkspace();
+        relayoutWorkspace(true);
         updateToolIndicators();
     });
 
     btnFlipH.addEventListener('click', () => {
         const state = getCurrentState();
+        const prev = { state: cloneState(state), viewMode };
         state.flipX = !state.flipX;
+        pushHistorySnapshot(prev.state, prev.viewMode);
         rebuildPreviewBase();
         updateToolIndicators();
     });
 
     btnFlipV.addEventListener('click', () => {
         const state = getCurrentState();
+        const prev = { state: cloneState(state), viewMode };
         state.flipY = !state.flipY;
+        pushHistorySnapshot(prev.state, prev.viewMode);
         rebuildPreviewBase();
         updateToolIndicators();
     });
@@ -1161,8 +1664,17 @@ document.addEventListener('DOMContentLoaded', () => {
         rebuildPreviewBase();
         updateToolIndicators();
     };
-    straightenSlider.addEventListener('input', onStraightenInput);
-    straightenSlider.addEventListener('change', onStraightenInput);
+    straightenSlider.addEventListener('pointerdown', beginSliderGesture);
+    straightenSlider.addEventListener('mousedown', beginSliderGesture);
+    straightenSlider.addEventListener('touchstart', beginSliderGesture, { passive: true });
+    straightenSlider.addEventListener('input', () => {
+        beginSliderGesture();
+        onStraightenInput();
+    });
+    straightenSlider.addEventListener('change', () => {
+        onStraightenInput();
+        commitSliderGesture();
+    });
 
     const stepStraightenSlider = (delta) => {
         const currentVal = parseFloat(straightenSlider.value) || 0;
@@ -1175,27 +1687,15 @@ document.addEventListener('DOMContentLoaded', () => {
     setupStepButton(btnStraightenMinus, () => stepStraightenSlider(-0.5));
     setupStepButton(btnStraightenPlus, () => stepStraightenSlider(0.5));
 
-    btnResetTransform.addEventListener('click', () => {
-        const state = getCurrentState();
-        const rotChanged = state.rotation90 !== 0;
-        state.rotation90 = 0;
-        state.flipX = false;
-        state.flipY = false;
-        state.straighten = 0;
-        updateOrientedDimensions();
-        if (rotChanged) resetNormCropForAspect(state.aspectMode);
-        rebuildPreviewBase();
-        relayoutWorkspace();
-        updateToolIndicators();
-    });
-
     // Filter Presets & Strength
     filterPillsContainer.addEventListener('click', (e) => {
         const pill = e.target.closest('.filter-pill');
         if (!pill) return;
         const filterName = pill.getAttribute('data-filter');
         const state = getCurrentState();
+        const prev = { state: cloneState(state), viewMode };
         state.filter = filterName;
+        pushHistorySnapshot(prev.state, prev.viewMode);
         updateToolIndicators();
         schedulePreviewRender();
     });
@@ -1207,8 +1707,17 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSliderTrackFill(filterStrengthSlider, filterFill, false);
         schedulePreviewRender();
     };
-    filterStrengthSlider.addEventListener('input', onFilterStrengthInput);
-    filterStrengthSlider.addEventListener('change', onFilterStrengthInput);
+    filterStrengthSlider.addEventListener('pointerdown', beginSliderGesture);
+    filterStrengthSlider.addEventListener('mousedown', beginSliderGesture);
+    filterStrengthSlider.addEventListener('touchstart', beginSliderGesture, { passive: true });
+    filterStrengthSlider.addEventListener('input', () => {
+        beginSliderGesture();
+        onFilterStrengthInput();
+    });
+    filterStrengthSlider.addEventListener('change', () => {
+        onFilterStrengthInput();
+        commitSliderGesture();
+    });
 
     const stepFilterSlider = (delta) => {
         const currentVal = parseInt(filterStrengthSlider.value, 10) || 0;
@@ -1221,7 +1730,25 @@ document.addEventListener('DOMContentLoaded', () => {
     setupStepButton(btnFilterMinus, () => stepFilterSlider(-1));
     setupStepButton(btnFilterPlus, () => stepFilterSlider(1));
 
-    // Compare & Reset All
+    // Undo / Redo Buttons & Keyboard Shortcuts
+    if (btnUndo) btnUndo.addEventListener('click', performUndo);
+    if (btnRedo) btnRedo.addEventListener('click', performRedo);
+
+    window.addEventListener('keydown', (e) => {
+        if (!editorView.classList.contains('active')) return;
+        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+            const key = e.key.toLowerCase();
+            if (key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                performUndo();
+            } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+                e.preventDefault();
+                performRedo();
+            }
+        }
+    });
+
+    // Compare With Original (Hold)
     const startCompare = (e) => {
         if (e && e.cancelable) e.preventDefault();
         isComparing = true;
@@ -1234,65 +1761,291 @@ document.addEventListener('DOMContentLoaded', () => {
         btnCompare.classList.remove('comparing');
         schedulePreviewRender();
     };
-    btnCompare.addEventListener('mousedown', startCompare);
-    btnCompare.addEventListener('touchstart', startCompare, { passive: false });
-    window.addEventListener('mouseup', endCompare);
-    window.addEventListener('touchend', endCompare);
-    window.addEventListener('touchcancel', endCompare);
+    if (window.PointerEvent) {
+        btnCompare.addEventListener('pointerdown', startCompare);
+        window.addEventListener('pointerup', endCompare);
+        window.addEventListener('pointercancel', endCompare);
+    } else {
+        btnCompare.addEventListener('mousedown', startCompare);
+        btnCompare.addEventListener('touchstart', startCompare, { passive: false });
+        window.addEventListener('mouseup', endCompare);
+        window.addEventListener('touchend', endCompare);
+        window.addEventListener('touchcancel', endCompare);
+    }
 
-    btnResetAll.addEventListener('click', () => {
-        const state = getCurrentState();
-        const prevAspect = state.aspectMode;
-        const prevCrop = state.normCrop ? { ...state.normCrop } : null;
-        const rotWasSwapped = (state.rotation90 % 180) !== 0;
+    // --- Universal Image Format Decoder (Camera / iPhone / Android / Desktop) ---
+    const decodedBlobCache = new WeakMap();
+    const externalScriptPromises = new Map();
 
-        imageStates[currentFileIndex] = createDefaultState();
-        imageStates[currentFileIndex].aspectMode = prevAspect;
-        updateOrientedDimensions();
-        if (!rotWasSwapped && prevCrop) {
-            imageStates[currentFileIndex].normCrop = prevCrop;
-        } else {
-            resetNormCropForAspect(prevAspect);
+    const loadExternalScript = (urls) => {
+        const key = urls[0];
+        if (externalScriptPromises.has(key)) {
+            return externalScriptPromises.get(key);
         }
+        const promise = new Promise((resolve, reject) => {
+            let idx = 0;
+            const tryNext = () => {
+                if (idx >= urls.length) {
+                    externalScriptPromises.delete(key);
+                    reject(new Error('Script load failed'));
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = urls[idx++];
+                script.async = true;
+                script.onload = () => resolve();
+                script.onerror = () => {
+                    script.remove();
+                    tryNext();
+                };
+                document.head.appendChild(script);
+            };
+            tryNext();
+        });
+        externalScriptPromises.set(key, promise);
+        return promise;
+    };
 
-        rebuildPreviewBase();
-        relayoutWorkspace();
-        updateToolIndicators();
-        showToast('リセットしました');
-    });
+    const isSupportedImageFile = (file) => {
+        if (!file) return false;
+        if (file.type && file.type.startsWith('image/')) return true;
+        return /\.(jpe?g|jfif|pjpeg|pjp|png|webp|gif|bmp|avif|svg|ico|heic|heif|hif|tif|tiff|dng|raw|cr2|cr3|nef|nrw|arw|srf|sr2|orf|rw2|raf|pef|srw|x3f|3fr|rwl|iiq)$/i.test(file.name || '');
+    };
 
-    // Batch Apply Settings to All Images
-    btnApplyAll.addEventListener('click', () => {
-        if (imageFiles.length <= 1) return;
-        const current = getCurrentState();
-        for (let i = 0; i < imageFiles.length; i++) {
-            if (i === currentFileIndex) continue;
-            const target = imageStates[i] || createDefaultState();
-            for (const key of Object.keys(ADJUSTMENT_TOOLS)) {
-                target[key] = current[key];
+    const loadImageFromBlob = (blob) => {
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+                URL.revokeObjectURL(url);
+                if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                    resolve(img);
+                } else {
+                    reject(new Error('Zero dimension image'));
+                }
+            };
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                // Fallback via FileReader DataURL for quirky mobile browsers
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const img2 = new Image();
+                    img2.onload = () => {
+                        if (img2.naturalWidth > 0 && img2.naturalHeight > 0) {
+                            resolve(img2);
+                        } else {
+                            reject(new Error('Zero dimension image'));
+                        }
+                    };
+                    img2.onerror = () => reject(new Error('Image decode failed'));
+                    img2.src = ev.target.result;
+                };
+                reader.onerror = () => reject(new Error('FileReader failed'));
+                reader.readAsDataURL(blob);
+            };
+            img.src = url;
+        });
+    };
+
+    const sniffFormatFromHeader = (bytes) => {
+        if (bytes.length < 12) return 'unknown';
+        // ISO-BMFF (HEIC / HEIF / AVIF / CR3)
+        if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+            const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]).toLowerCase();
+            if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1', 'heim', 'heis', 'hevm', 'hevs'].includes(brand)) {
+                return 'heic';
             }
-            target.filter = current.filter;
-            target.filterStrength = current.filterStrength;
-            target.aspectMode = current.aspectMode;
-            target.normCrop = null;
-            imageStates[i] = target;
+            if (brand === 'crx ') return 'raw';
         }
-        showToast('全画像に適用しました');
-    });
+        // Fujifilm RAF
+        if (bytes[0] === 0x46 && bytes[1] === 0x55 && bytes[2] === 0x4A && bytes[3] === 0x49) {
+            return 'raw';
+        }
+        // TIFF / DNG / CR2 / NEF / ARW / ORF / RW2
+        if ((bytes[0] === 0x49 && bytes[1] === 0x49 && (bytes[2] === 0x2A || bytes[2] === 0x55)) ||
+            (bytes[0] === 0x4D && bytes[1] === 0x4D && bytes[2] === 0x00 && bytes[3] === 0x2A)) {
+            return 'tiff-or-raw';
+        }
+        return 'unknown';
+    };
 
-    // --- File Loading ---
+    // Walk JPEG markers cleanly to extract embedded full-res JPEG previews from RAW/DNG/CR2/CR3/NEF/ARW/RAF
+    const findJpegEndOffset = (bytes, start) => {
+        let pos = start + 2;
+        const len = bytes.length;
+        while (pos + 1 < len) {
+            if (bytes[pos] !== 0xFF) return -1;
+            while (pos < len && bytes[pos] === 0xFF) pos++;
+            if (pos >= len) return -1;
+            const marker = bytes[pos++];
+
+            if (marker === 0xD9) return pos; // EOI
+            if (marker === 0x00 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD8)) {
+                continue;
+            }
+            if (pos + 1 >= len) return -1;
+            const segLen = (bytes[pos] << 8) | bytes[pos + 1];
+            if (segLen < 2 || pos + segLen > len) return -1;
+            pos += segLen;
+
+            if (marker === 0xDA) { // SOS: scan entropy-coded data until non-stuffed marker
+                while (pos + 1 < len) {
+                    if (bytes[pos] === 0xFF) {
+                        const next = bytes[pos + 1];
+                        if (next !== 0x00 && !(next >= 0xD0 && next <= 0xD7) && next !== 0xFF) {
+                            if (next === 0xD9) return pos + 2;
+                            break;
+                        }
+                    }
+                    pos++;
+                }
+            }
+        }
+        return -1;
+    };
+
+    const extractLargestEmbeddedJpeg = async (bytes) => {
+        const candidates = [];
+        for (let i = 0; i < bytes.length - 4; i++) {
+            if (bytes[i] === 0xFF && bytes[i + 1] === 0xD8 && bytes[i + 2] === 0xFF) {
+                const end = findJpegEndOffset(bytes, i);
+                if (end > i + 1024) {
+                    candidates.push({ start: i, end, size: end - i });
+                    i = end - 1;
+                }
+            }
+        }
+        candidates.sort((a, b) => b.size - a.size);
+        for (const cand of candidates) {
+            try {
+                const blob = new Blob([bytes.subarray(cand.start, cand.end)], { type: 'image/jpeg' });
+                const img = await loadImageFromBlob(blob);
+                return { blob, img };
+            } catch (_) {}
+        }
+        return null;
+    };
+
+    const decodeHeicBlob = async (file) => {
+        if (typeof window.heic2any !== 'function') {
+            await loadExternalScript([
+                'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js',
+                'https://unpkg.com/heic2any@0.0.4/dist/heic2any.min.js'
+            ]);
+        }
+        if (typeof window.heic2any !== 'function') {
+            throw new Error('heic2any unavailable');
+        }
+        const converted = await window.heic2any({
+            blob: file,
+            toType: 'image/jpeg',
+            quality: 0.96
+        });
+        return Array.isArray(converted) ? converted[0] : converted;
+    };
+
+    const decodeTiffBlob = async (bytes) => {
+        if (typeof window.UTIF === 'undefined') {
+            await loadExternalScript([
+                'https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.min.js',
+                'https://unpkg.com/utif@3.1.0/UTIF.min.js'
+            ]);
+        }
+        if (typeof window.UTIF === 'undefined') {
+            throw new Error('UTIF unavailable');
+        }
+        const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        const ifds = window.UTIF.decode(buf);
+        if (!ifds || ifds.length === 0) throw new Error('Empty TIFF');
+        // Pick largest IFD page
+        let bestIfd = ifds[0];
+        for (const ifd of ifds) {
+            window.UTIF.decodeImage(buf, ifd);
+            if ((ifd.width * ifd.height) > ((bestIfd.width || 0) * (bestIfd.height || 0))) {
+                bestIfd = ifd;
+            }
+        }
+        const rgba = window.UTIF.toRGBA8(bestIfd);
+        const c = document.createElement('canvas');
+        c.width = bestIfd.width;
+        c.height = bestIfd.height;
+        const ctx = c.getContext('2d');
+        const imgData = new ImageData(new Uint8ClampedArray(rgba), bestIfd.width, bestIfd.height);
+        ctx.putImageData(imgData, 0, 0);
+        return new Promise((resolve, reject) => {
+            c.toBlob((b) => (b ? resolve(b) : reject(new Error('TIFF toBlob failed'))), 'image/png');
+        });
+    };
+
+    const loadDecodedImageForFile = async (file, onStatus) => {
+        if (decodedBlobCache.has(file)) {
+            return await loadImageFromBlob(decodedBlobCache.get(file));
+        }
+
+        const name = (file.name || '').toLowerCase();
+        const isRawExt = /\.(dng|raw|cr2|cr3|nef|nrw|arw|srf|sr2|orf|rw2|raf|pef|srw|x3f|3fr|rwl|iiq)$/i.test(name);
+
+        // 1. Try native browser decode first (handles JPEG, PNG, WebP, AVIF, GIF, BMP, SVG, and Safari HEIC/TIFF/DNG)
+        try {
+            const nativeImg = await loadImageFromBlob(file);
+            // Guard against browsers that decode only a tiny EXIF thumbnail for large RAW files
+            if (!(isRawExt && file.size > 500000 && Math.max(nativeImg.naturalWidth, nativeImg.naturalHeight) < 480)) {
+                return nativeImg;
+            }
+        } catch (_) {}
+
+        // 2. Inspect binary header for specialized formats
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        const sniff = sniffFormatFromHeader(bytes);
+        const isHeic = /\.(heic|heif|hif)$/i.test(name) || sniff === 'heic' || (file.type && /heic|heif/i.test(file.type));
+        const isTiff = /\.(tif|tiff)$/i.test(name) || (file.type && /tiff/i.test(file.type));
+
+        if (isHeic) {
+            if (onStatus) onStatus('HEIC/HEIF画像を変換しています...');
+            const jpegBlob = await decodeHeicBlob(file);
+            decodedBlobCache.set(file, jpegBlob);
+            return await loadImageFromBlob(jpegBlob);
+        }
+
+        if (isRawExt || sniff === 'raw' || sniff === 'tiff-or-raw') {
+            if (onStatus) onStatus('カメラ画像を読み込んでいます...');
+            const extracted = await extractLargestEmbeddedJpeg(bytes);
+            if (extracted) {
+                decodedBlobCache.set(file, extracted.blob);
+                return extracted.img;
+            }
+        }
+
+        if (isTiff || sniff === 'tiff-or-raw') {
+            if (onStatus) onStatus('TIFF画像を変換しています...');
+            const pngBlob = await decodeTiffBlob(bytes);
+            decodedBlobCache.set(file, pngBlob);
+            return await loadImageFromBlob(pngBlob);
+        }
+
+        throw new Error('Unsupported or corrupted image format');
+    };
+
+    // --- File Loading & Multi-Image Editor Navigation ---
     btnTriggerUpload.addEventListener('click', () => {
         imageUpload.click();
     });
 
     const handleSelectedFiles = (fileList) => {
-        const validFiles = Array.from(fileList).filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif)$/i.test(f.name));
-        if (validFiles.length === 0) return;
+        const validFiles = Array.from(fileList).filter(isSupportedImageFile);
+        if (validFiles.length === 0) {
+            showToast('対応している画像が見つかりませんでした');
+            return;
+        }
 
         imageFiles = validFiles;
         currentFileIndex = 0;
         imageStates = validFiles.map(() => createDefaultState());
-        editedResults = new Array(validFiles.length).fill(null);
+        imageHistories = validFiles.map(() => ({ undo: [], redo: [] }));
+        revokeEncodedUrls();
+        revokeThumbUrls();
+        viewMode = 'full';
 
         showView(editorView);
         loadCurrentImage();
@@ -1335,23 +2088,66 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    const loadCurrentImage = () => {
+    const updateEditorHeaderForMulti = () => {
+        const isMulti = imageFiles.length > 1;
+        const isLast = currentFileIndex >= imageFiles.length - 1;
+
+        if (progressNav) progressNav.style.display = isMulti ? 'inline-flex' : 'none';
+        if (progressIndicator) progressIndicator.textContent = `${currentFileIndex + 1} / ${imageFiles.length}`;
+        if (btnPrevImage) btnPrevImage.disabled = currentFileIndex <= 0;
+        if (btnNextEdit) btnNextEdit.disabled = isLast;
+
+        if (!isLast) {
+            btnProcess.classList.remove('icon-only');
+            btnProcessLabel.style.display = 'inline';
+            btnProcessLabel.textContent = '次へ';
+            iconProcessNext.style.display = 'block';
+            iconProcessCheck.style.display = 'none';
+            btnProcess.setAttribute('aria-label', '次の画像へ');
+        } else {
+            btnProcess.classList.add('icon-only');
+            btnProcessLabel.style.display = 'none';
+            iconProcessNext.style.display = 'none';
+            iconProcessCheck.style.display = 'block';
+            btnProcess.setAttribute('aria-label', '編集を完了');
+        }
+    };
+
+    const setRenderLoading = (open, text = '画像を読み込んでいます...') => {
+        if (!renderLoading) return;
+        if (renderLoadingText) renderLoadingText.textContent = text;
+        renderLoading.classList.toggle('open', open);
+        renderLoading.setAttribute('aria-hidden', open ? 'false' : 'true');
+    };
+
+    const loadCurrentImage = async () => {
         const file = imageFiles[currentFileIndex];
         if (!file) return;
+        const targetIndex = currentFileIndex;
 
-        const isMulti = imageFiles.length > 1;
-        progressIndicator.style.display = isMulti ? 'block' : 'none';
-        progressIndicator.textContent = `${currentFileIndex + 1} / ${imageFiles.length}`;
-        btnApplyAll.style.display = isMulti ? 'inline-flex' : 'none';
-        btnProcess.disabled = false;
+        updateEditorHeaderForMulti();
+        btnProcess.disabled = true;
 
         if (currentObjectUrl) {
             URL.revokeObjectURL(currentObjectUrl);
             currentObjectUrl = null;
         }
 
-        const img = new Image();
-        img.onload = () => {
+        let loadingShown = false;
+        const loadingTimer = setTimeout(() => {
+            loadingShown = true;
+            setRenderLoading(true, '画像を読み込んでいます...');
+        }, 180);
+
+        try {
+            const img = await loadDecodedImageForFile(file, (msg) => {
+                loadingShown = true;
+                setRenderLoading(true, msg);
+            });
+            clearTimeout(loadingTimer);
+            if (loadingShown) setRenderLoading(false);
+
+            if (targetIndex !== currentFileIndex) return;
             currentSourceImage = img;
             const state = getCurrentState();
 
@@ -1363,25 +2159,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 resetNormCropForAspect(state.aspectMode);
             }
 
+            // Start each newly opened image in 'full' view unless user already cropped it smaller
+            viewMode = (state.normCrop && (state.normCrop.w < 0.82 && state.normCrop.h < 0.82)) ? 'crop' : 'full';
+
             rebuildPreviewBase();
-            relayoutWorkspace();
+            relayoutWorkspace(false);
             updateToolIndicators();
-        };
-
-        img.onerror = () => {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                img.src = ev.target.result;
-            };
-            reader.readAsDataURL(file);
-        };
-
-        currentObjectUrl = URL.createObjectURL(file);
-        img.src = currentObjectUrl;
+            btnProcess.disabled = false;
+        } catch (err) {
+            clearTimeout(loadingTimer);
+            if (loadingShown) setRenderLoading(false);
+            console.error(err);
+            btnProcess.disabled = false;
+            showToast('この画像形式を読み込めませんでした');
+        }
     };
 
-    // --- High-Resolution Export Engine ---
-    const renderFinalExport = (img, state, originalFile, index) => {
+    if (btnPrevImage) {
+        btnPrevImage.addEventListener('click', () => {
+            if (currentFileIndex > 0) {
+                currentFileIndex--;
+                loadCurrentImage();
+            }
+        });
+    }
+
+    if (btnNextEdit) {
+        btnNextEdit.addEventListener('click', () => {
+            if (currentFileIndex < imageFiles.length - 1) {
+                currentFileIndex++;
+                loadCurrentImage();
+            }
+        });
+    }
+
+    // --- High-Resolution Export Engine (Format-Independent Canvas + Async Encoder) ---
+    const renderFinalCanvas = (img, state, originalFile, index) => {
         const isSwapped = (state.rotation90 % 180) !== 0;
         const fullOrientedW = isSwapped ? img.naturalHeight : img.naturalWidth;
         const fullOrientedH = isSwapped ? img.naturalWidth : img.naturalHeight;
@@ -1400,9 +2213,6 @@ document.addEventListener('DOMContentLoaded', () => {
         finalCanvas.height = outH;
         const ctx = finalCanvas.getContext('2d', { willReadFrequently: true });
 
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, outW, outH);
-
         const virtualScale = outW / (fullOrientedW * nc.w);
         const virtualFullW = fullOrientedW * virtualScale;
         const virtualFullH = fullOrientedH * virtualScale;
@@ -1417,13 +2227,374 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.putImageData(exportImageData, 0, 0);
         }
 
-        const dataUrl = finalCanvas.toDataURL('image/jpeg', 0.92);
-        const blob = dataURLToBlob(dataUrl);
-        const filename = buildSafeFilename(originalFile, index);
-
-        return { dataUrl, blob, filename };
+        return { canvas: finalCanvas, width: outW, height: outH, originalFile, index };
     };
 
+    const createThumbnailBlob = (canvas, maxDim = 480) => {
+        return new Promise((resolve) => {
+            const maxSide = Math.max(canvas.width, canvas.height);
+            const scale = maxSide > maxDim ? (maxDim / maxSide) : 1;
+            const tw = Math.max(1, Math.round(canvas.width * scale));
+            const th = Math.max(1, Math.round(canvas.height * scale));
+            const tc = document.createElement('canvas');
+            tc.width = tw;
+            tc.height = th;
+            const tctx = tc.getContext('2d');
+            tctx.fillStyle = '#f1f5f9';
+            tctx.fillRect(0, 0, tw, th);
+            tctx.imageSmoothingEnabled = true;
+            tctx.imageSmoothingQuality = 'high';
+            tctx.drawImage(canvas, 0, 0, tw, th);
+
+            const finish = (blob) => {
+                tc.width = 0;
+                tc.height = 0;
+                resolve(blob);
+            };
+
+            if (tc.toBlob) {
+                tc.toBlob((blob) => finish(blob), 'image/jpeg', 0.85);
+            } else {
+                try {
+                    const dataUrl = tc.toDataURL('image/jpeg', 0.85);
+                    const bstr = atob(dataUrl.split(',')[1]);
+                    let n = bstr.length;
+                    const u8arr = new Uint8Array(n);
+                    while (n--) u8arr[n] = bstr.charCodeAt(n);
+                    finish(new Blob([u8arr], { type: 'image/jpeg' }));
+                } catch (_) {
+                    finish(null);
+                }
+            }
+        });
+    };
+
+    const encodeCanvasToBlob = (canvas, format, quality) => {
+        return new Promise((resolve, reject) => {
+            let opaqueCanvas = null;
+            let sourceCanvas = canvas;
+            // JPEG has no alpha channel; composite onto black background cleanly
+            if (format === 'image/jpeg') {
+                opaqueCanvas = document.createElement('canvas');
+                opaqueCanvas.width = canvas.width;
+                opaqueCanvas.height = canvas.height;
+                const octx = opaqueCanvas.getContext('2d');
+                octx.fillStyle = '#000000';
+                octx.fillRect(0, 0, opaqueCanvas.width, opaqueCanvas.height);
+                octx.drawImage(canvas, 0, 0);
+                sourceCanvas = opaqueCanvas;
+            }
+
+            const releaseTemp = () => {
+                if (opaqueCanvas) {
+                    opaqueCanvas.width = 0;
+                    opaqueCanvas.height = 0;
+                    opaqueCanvas = null;
+                }
+            };
+
+            const qArg = (format === 'image/png') ? undefined : quality;
+            if (sourceCanvas.toBlob) {
+                sourceCanvas.toBlob((blob) => {
+                    releaseTemp();
+                    if (blob) {
+                        resolve(blob);
+                    } else {
+                        reject(new Error('Canvas encoding failed'));
+                    }
+                }, format, qArg);
+            } else {
+                try {
+                    const dataUrl = sourceCanvas.toDataURL(format, qArg);
+                    releaseTemp();
+                    const parts = dataUrl.split(',');
+                    const mimeMatch = parts[0].match(/:(.*?);/);
+                    const mime = mimeMatch ? mimeMatch[1] : format;
+                    const bstr = atob(parts[1]);
+                    let n = bstr.length;
+                    const u8arr = new Uint8Array(n);
+                    while (n--) u8arr[n] = bstr.charCodeAt(n);
+                    resolve(new Blob([u8arr], { type: mime }));
+                } catch (err) {
+                    releaseTemp();
+                    reject(err);
+                }
+            }
+        });
+    };
+
+    const reencodeAllAndRenderCompleteView = async ({ reuseThumbs = false, loadingPrefix = '仕上げ中' } = {}) => {
+        const gen = ++encodeGeneration;
+        const nextOutputs = [];
+        const nextThumbUrls = reuseThumbs ? thumbUrls.slice() : [];
+        let totalBytes = 0;
+
+        for (let i = 0; i < imageFiles.length; i++) {
+            if (imageFiles.length > 1) {
+                setRenderLoading(true, `${loadingPrefix} (${i + 1} / ${imageFiles.length})...`);
+            }
+            // Yield to UI thread so spinner/progress stays responsive
+            await new Promise(r => setTimeout(r, 10));
+            if (gen !== encodeGeneration) {
+                nextOutputs.forEach(o => URL.revokeObjectURL(o.objectUrl));
+                if (!reuseThumbs) nextThumbUrls.forEach(u => { if (u) URL.revokeObjectURL(u); });
+                return;
+            }
+
+            const img = (i === currentFileIndex && currentSourceImage)
+                ? currentSourceImage
+                : await loadDecodedImageForFile(imageFiles[i]);
+            if (gen !== encodeGeneration) {
+                nextOutputs.forEach(o => URL.revokeObjectURL(o.objectUrl));
+                if (!reuseThumbs) nextThumbUrls.forEach(u => { if (u) URL.revokeObjectURL(u); });
+                return;
+            }
+
+            const state = imageStates[i] || createDefaultState();
+            const rendered = renderFinalCanvas(img, state, imageFiles[i], i);
+
+            let thumbUrl = nextThumbUrls[i] || null;
+            if (!reuseThumbs && imageFiles.length > 1) {
+                const thumbBlob = await createThumbnailBlob(rendered.canvas, 480);
+                if (thumbBlob) {
+                    thumbUrl = URL.createObjectURL(thumbBlob);
+                }
+                nextThumbUrls[i] = thumbUrl;
+            }
+
+            const blob = await encodeCanvasToBlob(rendered.canvas, exportFormat, EXPORT_QUALITY);
+            // Immediately free full-res canvas backing store to stay well under mobile WebKit RAM caps
+            rendered.canvas.width = 0;
+            rendered.canvas.height = 0;
+
+            if (gen !== encodeGeneration) {
+                nextOutputs.forEach(o => URL.revokeObjectURL(o.objectUrl));
+                if (!reuseThumbs) nextThumbUrls.forEach(u => { if (u) URL.revokeObjectURL(u); });
+                return;
+            }
+
+            const objectUrl = URL.createObjectURL(blob);
+            const filename = buildSafeFilename(rendered.originalFile, rendered.index, exportFormat);
+            totalBytes += blob.size;
+            nextOutputs.push({
+                index: rendered.index,
+                blob,
+                objectUrl,
+                thumbUrl,
+                filename,
+                width: rendered.width,
+                height: rendered.height
+            });
+        }
+
+        if (gen !== encodeGeneration) {
+            nextOutputs.forEach(o => URL.revokeObjectURL(o.objectUrl));
+            if (!reuseThumbs) nextThumbUrls.forEach(u => { if (u) URL.revokeObjectURL(u); });
+            return;
+        }
+
+        revokeEncodedUrls();
+        if (!reuseThumbs) {
+            revokeThumbUrls();
+            thumbUrls = nextThumbUrls;
+        }
+        encodedOutputs = nextOutputs;
+
+        const isSingle = encodedOutputs.length === 1;
+        if (completeTitlePill) {
+            completeTitlePill.textContent = isSingle ? '編集完了' : `${encodedOutputs.length}枚 編集完了`;
+        }
+        if (btnDownloadAllLabel) {
+            btnDownloadAllLabel.textContent = isSingle ? '保存' : 'すべて保存';
+        }
+
+        const totalSizeText = isSingle ? formatBytes(totalBytes) : `合計 ${formatBytes(totalBytes)}`;
+        if (exportTotalSize) exportTotalSize.textContent = totalSizeText;
+
+        if (isSingle && encodedOutputs[0]) {
+            const out = encodedOutputs[0];
+            singleResultWrap.style.display = 'flex';
+            batchGallery.style.display = 'none';
+            batchGallery.classList.remove('batch-gallery--dense');
+            singleResultImage.src = out.objectUrl;
+        } else {
+            singleResultWrap.style.display = 'none';
+            batchGallery.style.display = 'grid';
+            batchGallery.classList.toggle('batch-gallery--dense', encodedOutputs.length >= 5);
+            batchGallery.innerHTML = '';
+
+            encodedOutputs.forEach((out) => {
+                const card = document.createElement('div');
+                card.className = 'batch-item';
+
+                const thumbWrap = document.createElement('div');
+                thumbWrap.className = 'batch-item-thumb';
+                thumbWrap.addEventListener('click', () => openLightbox(out.index));
+
+                const imgEl = document.createElement('img');
+                imgEl.loading = 'lazy';
+                imgEl.decoding = 'async';
+                imgEl.src = out.thumbUrl || out.objectUrl;
+                imgEl.alt = out.filename;
+
+                thumbWrap.appendChild(imgEl);
+
+                const actions = document.createElement('div');
+                actions.className = 'batch-item-actions';
+
+                const editBtn = document.createElement('button');
+                editBtn.type = 'button';
+                editBtn.className = 'batch-item-btn';
+                editBtn.textContent = '編集';
+                editBtn.addEventListener('click', () => {
+                    currentFileIndex = out.index;
+                    showView(editorView);
+                    loadCurrentImage();
+                });
+
+                actions.appendChild(editBtn);
+
+                card.appendChild(thumbWrap);
+                card.appendChild(actions);
+                batchGallery.appendChild(card);
+            });
+        }
+
+        // Update Lightbox if open
+        if (lightboxModal && lightboxModal.classList.contains('open')) {
+            updateLightboxDisplay();
+        }
+    };
+
+    const finishAllEditing = async () => {
+        if (imageFiles.length === 0) return;
+        closeActivePanel();
+        btnProcess.disabled = true;
+        setRenderLoading(true, imageFiles.length > 1 ? `仕上げ中 (1 / ${imageFiles.length})...` : '画像を仕上げています...');
+
+        try {
+            await reencodeAllAndRenderCompleteView({ reuseThumbs: false, loadingPrefix: '仕上げ中' });
+            showView(completeView);
+            const completeBodyEl = completeView ? completeView.querySelector('.complete-body') : null;
+            if (completeBodyEl) completeBodyEl.scrollTop = 0;
+        } catch (err) {
+            console.error(err);
+            showToast('画像の仕上げ中にエラーが発生しました');
+        } finally {
+            setRenderLoading(false);
+            btnProcess.disabled = false;
+        }
+    };
+
+    // --- Lightbox Modal Controls ---
+    const updateLightboxDisplay = () => {
+        const pos = encodedOutputs.findIndex(o => o.index === lightboxIndex);
+        const out = pos >= 0 ? encodedOutputs[pos] : null;
+        if (!out) return;
+        lightboxImage.src = out.objectUrl;
+        const multi = encodedOutputs.length > 1;
+        if (lightboxCounter) {
+            lightboxCounter.textContent = multi ? `${pos + 1} / ${encodedOutputs.length}` : '';
+            lightboxCounter.style.display = multi ? 'inline-flex' : 'none';
+        }
+        if (btnLightboxPrev) {
+            btnLightboxPrev.style.display = multi ? 'inline-flex' : 'none';
+            btnLightboxPrev.disabled = pos <= 0;
+        }
+        if (btnLightboxNext) {
+            btnLightboxNext.style.display = multi ? 'inline-flex' : 'none';
+            btnLightboxNext.disabled = pos >= encodedOutputs.length - 1;
+        }
+    };
+
+    const stepLightbox = (delta) => {
+        const pos = encodedOutputs.findIndex(o => o.index === lightboxIndex);
+        if (pos < 0) return;
+        const nextPos = pos + delta;
+        if (nextPos < 0 || nextPos >= encodedOutputs.length) return;
+        lightboxIndex = encodedOutputs[nextPos].index;
+        updateLightboxDisplay();
+    };
+
+    const openLightbox = (index) => {
+        const out = encodedOutputs.find(o => o.index === index);
+        if (!out || !lightboxModal) return;
+        lightboxIndex = index;
+        updateLightboxDisplay();
+        lightboxModal.classList.add('open');
+        lightboxModal.setAttribute('aria-hidden', 'false');
+    };
+
+    const closeLightbox = () => {
+        if (!lightboxModal) return;
+        lightboxIndex = -1;
+        lightboxModal.classList.remove('open');
+        lightboxModal.setAttribute('aria-hidden', 'true');
+    };
+
+    if (btnLightboxClose) btnLightboxClose.addEventListener('click', closeLightbox);
+    if (btnLightboxPrev) btnLightboxPrev.addEventListener('click', () => stepLightbox(-1));
+    if (btnLightboxNext) btnLightboxNext.addEventListener('click', () => stepLightbox(1));
+
+    if (lightboxBody) {
+        let lbSwipeX = null;
+        let lbSwipeY = null;
+        lightboxBody.addEventListener('pointerdown', (e) => {
+            lbSwipeX = e.clientX;
+            lbSwipeY = e.clientY;
+        });
+        lightboxBody.addEventListener('pointerup', (e) => {
+            if (lbSwipeX === null || encodedOutputs.length <= 1) return;
+            const dx = e.clientX - lbSwipeX;
+            const dy = e.clientY - lbSwipeY;
+            lbSwipeX = null;
+            lbSwipeY = null;
+            if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+                stepLightbox(dx < 0 ? 1 : -1);
+            }
+        });
+    }
+
+    if (lightboxModal) {
+        lightboxModal.addEventListener('click', (e) => {
+            if (e.target === lightboxModal || e.target.classList.contains('lightbox-body')) {
+                closeLightbox();
+            }
+        });
+    }
+    if (btnLightboxEdit) {
+        btnLightboxEdit.addEventListener('click', () => {
+            if (lightboxIndex < 0) return;
+            const targetIdx = lightboxIndex;
+            closeLightbox();
+            currentFileIndex = targetIdx;
+            showView(editorView);
+            loadCurrentImage();
+        });
+    }
+    // --- Format Selection ---
+    if (formatPillsContainer) {
+        formatPillsContainer.addEventListener('click', async (e) => {
+            const pill = e.target.closest('.format-pill');
+            if (!pill || pill.disabled) return;
+            const nextFormat = pill.getAttribute('data-format');
+            if (!nextFormat || nextFormat === exportFormat) return;
+            exportFormat = nextFormat;
+            Array.from(formatPillsContainer.querySelectorAll('.format-pill')).forEach(p => {
+                p.classList.toggle('active', p.getAttribute('data-format') === exportFormat);
+            });
+            if (imageFiles.length > 1) {
+                setRenderLoading(true, `形式を変換中 (1 / ${imageFiles.length})...`);
+            }
+            try {
+                await reencodeAllAndRenderCompleteView({ reuseThumbs: true, loadingPrefix: '形式を変換中' });
+            } finally {
+                setRenderLoading(false);
+            }
+        });
+    }
+
+    // --- Navigation & Saving Actions ---
     const handleResetWithConfirm = () => {
         if (imageFiles.length > 0) {
             if (window.confirm('最初の画面に戻りますか？\n（編集内容や処理結果はリセットされます）')) {
@@ -1434,7 +2605,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- Navigation & Saving Actions ---
     btnBack.addEventListener('click', () => {
         if (currentFileIndex > 0) {
             currentFileIndex--;
@@ -1444,11 +2614,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    btnResultBack.addEventListener('click', () => {
-        showView(editorView);
-        btnProcess.disabled = false;
-        requestAnimationFrame(relayoutWorkspace);
-    });
+    if (btnCompleteBack) {
+        btnCompleteBack.addEventListener('click', () => {
+            showView(editorView);
+            loadCurrentImage();
+        });
+    }
 
     if (btnRestartTop) {
         btnRestartTop.addEventListener('click', handleResetWithConfirm);
@@ -1456,111 +2627,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnProcess.addEventListener('click', () => {
         if (!currentSourceImage) return;
-        btnProcess.disabled = true;
-
-        setTimeout(() => {
-            try {
-                const state = getCurrentState();
-                const file = imageFiles[currentFileIndex];
-                const res = renderFinalExport(currentSourceImage, state, file, currentFileIndex);
-                editedResults[currentFileIndex] = res;
-
-                resultImage.src = res.dataUrl;
-
-                const isMulti = imageFiles.length > 1;
-                resultTitlePill.style.display = isMulti ? 'block' : 'none';
-                resultTitlePill.textContent = `${currentFileIndex + 1} / ${imageFiles.length}`;
-
-                btnShareImage.style.display = canUseWebShareFiles() ? 'inline-flex' : 'none';
-                btnNextImage.style.display = isMulti ? 'inline-flex' : 'none';
-
-                showView(resultView);
-            } catch (err) {
-                console.error(err);
-                showToast('エラーが発生しました');
-            } finally {
-                btnProcess.disabled = false;
-            }
-        }, 20);
-    });
-
-    btnDownloadImage.addEventListener('click', () => {
-        const res = editedResults[currentFileIndex];
-        if (!res) return;
-        triggerBlobDownload(res.blob, res.filename);
-        showToast('保存しました');
-    });
-
-    btnShareImage.addEventListener('click', async () => {
-        const res = editedResults[currentFileIndex];
-        if (!res) return;
-        try {
-            const shareFile = new File([res.blob], res.filename, { type: 'image/jpeg' });
-            await navigator.share({
-                files: [shareFile],
-                title: res.filename
-            });
-        } catch (err) {
-            if (err && err.name !== 'AbortError') {
-                triggerBlobDownload(res.blob, res.filename);
-                showToast('保存しました');
-            }
-        }
-    });
-
-    btnNextImage.addEventListener('click', () => {
         if (currentFileIndex < imageFiles.length - 1) {
             currentFileIndex++;
-            showView(editorView);
             loadCurrentImage();
         } else {
-            renderCompleteView();
-            showView(completeView);
+            finishAllEditing();
         }
     });
 
-    const renderCompleteView = () => {
-        const validResults = editedResults.filter(Boolean);
-        batchGallery.innerHTML = '';
-
-        validResults.forEach((res, idx) => {
-            const card = document.createElement('div');
-            card.className = 'batch-item';
-
-            const imgEl = document.createElement('img');
-            imgEl.src = res.dataUrl;
-            imgEl.alt = '';
-
-            const saveBtn = document.createElement('button');
-            saveBtn.type = 'button';
-            saveBtn.className = 'batch-item-btn';
-            saveBtn.textContent = '保存';
-            saveBtn.addEventListener('click', () => {
-                triggerBlobDownload(res.blob, res.filename);
-                showToast('保存しました');
-            });
-
-            card.appendChild(imgEl);
-            card.appendChild(saveBtn);
-            batchGallery.appendChild(card);
-        });
-    };
-
     btnDownloadAll.addEventListener('click', () => {
-        const validResults = editedResults.filter(Boolean);
-        validResults.forEach((res, idx) => {
+        if (encodedOutputs.length === 0) return;
+        encodedOutputs.forEach((out, idx) => {
             setTimeout(() => {
-                triggerBlobDownload(res.blob, res.filename);
+                triggerBlobDownload(out.blob, out.filename);
             }, idx * 250);
         });
-        showToast('保存しています');
+        showToast(encodedOutputs.length === 1 ? '保存しました' : `${encodedOutputs.length}枚を保存しています`);
     });
-
-    btnRestart.addEventListener('click', handleResetWithConfirm);
 
     // --- 誤ってWebサイトを閉じないようにする確認画面 (beforeunload) ---
     window.addEventListener('beforeunload', (event) => {
-        // 画像が読み込まれて作業中の場合、離脱確認ダイアログを表示
         if (imageFiles && imageFiles.length > 0) {
             event.preventDefault();
             event.returnValue = '';
@@ -1571,10 +2657,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('./sw.js').then((registration) => {
-                // ページ読み込み時に更新をチェック
                 registration.update();
-
-                // 新しい Service Worker がインストールされたときの検知
                 registration.addEventListener('updatefound', () => {
                     const newWorker = registration.installing;
                     if (newWorker) {

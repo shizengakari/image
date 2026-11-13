@@ -329,6 +329,109 @@ console.log('\n--- 4. 高解像度エクスポート幾何テスト ---');
     check('エクスポート出力画像のアスペクト比がクロップ比率と合致', Math.abs((outW / outH) - (nc.w * fullOrientedW / (nc.h * fullOrientedH))) < 0.01);
 }
 
+// ----------------------------------------------------
+// 5. 切り抜き最大化レイアウト・フォーマット選択・入力形式判定テスト
+// ----------------------------------------------------
+console.log('\n--- 5. 切り抜き最大化 & 出力形式・多形式入力テスト ---');
+
+{
+    // 5.1 Zoom-to-Crop ('crop' モード) 幾何テスト
+    const contW = 400;
+    const contH = 600;
+    const availW = contW - 48; // 352
+    const availH = contH - 48; // 552
+    const orientedW = 2000;
+    const orientedH = 1000;
+    const nc = { x: 0.25, y: 0.25, w: 0.2, h: 0.4 }; // 400x400 px crop
+
+    const cropOrientedW = nc.w * orientedW; // 400
+    const cropOrientedH = nc.h * orientedH; // 400
+    const scale = Math.min(availW / cropOrientedW, availH / cropOrientedH); // 352 / 400 = 0.88
+    const cropBox = {
+        w: cropOrientedW * scale,
+        h: cropOrientedH * scale,
+        x: (contW - cropOrientedW * scale) / 2,
+        y: (contH - cropOrientedH * scale) / 2
+    };
+    const imgRect = {
+        w: orientedW * scale,
+        h: orientedH * scale,
+        x: cropBox.x - nc.x * (orientedW * scale),
+        y: cropBox.y - nc.y * (orientedH * scale)
+    };
+
+    check('切り抜き最大化時、クロップ枠がコンテナ最大幅(352px)にフィットする', Math.abs(cropBox.w - availW) < 1e-6);
+    check('切り抜き最大化時、imgRect と cropBox の相対正規化座標が完全一致する',
+        Math.abs((cropBox.x - imgRect.x) / imgRect.w - nc.x) < 1e-9 &&
+        Math.abs((cropBox.y - imgRect.y) / imgRect.h - nc.y) < 1e-9);
+}
+
+{
+    // 5.2 入力形式問わずデフォルトは .jpg、選択形式に応じて拡張子が変わる
+    const FORMAT_META = {
+        'image/jpeg': { ext: 'jpg' },
+        'image/png': { ext: 'png' },
+        'image/webp': { ext: 'webp' }
+    };
+    const buildSafeFilename = (name, format = 'image/jpeg') => {
+        const meta = FORMAT_META[format] || FORMAT_META['image/jpeg'];
+        const baseName = name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_\-]/g, '_');
+        return `${baseName || 'photo'}_edited.${meta.ext}`;
+    };
+
+    const inputs = ['photo.png', 'IMG_001.HEIC', 'RAW_001.DNG', 'scan.tiff', 'shot.webp', 'pic.avif', 'canon.CR3'];
+    check('あらゆる入力形式でもデフォルト出力ファイル名は .jpg になる',
+        inputs.every(n => buildSafeFilename(n).endsWith('_edited.jpg')));
+    check('PNG選択時は .png、WebP選択時は .webp になる',
+        buildSafeFilename('photo.heic', 'image/png').endsWith('.png') &&
+        buildSafeFilename('photo.dng', 'image/webp').endsWith('.webp'));
+}
+
+{
+    // 5.3 埋め込みJPEGマーカー抽出テスト (カメラRAW用)
+    const findJpegEndOffset = (bytes, start) => {
+        let pos = start + 2;
+        const len = bytes.length;
+        while (pos + 1 < len) {
+            if (bytes[pos] !== 0xFF) return -1;
+            while (pos < len && bytes[pos] === 0xFF) pos++;
+            if (pos >= len) return -1;
+            const marker = bytes[pos++];
+            if (marker === 0xD9) return pos;
+            if (marker === 0x00 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD8)) continue;
+            if (pos + 1 >= len) return -1;
+            const segLen = (bytes[pos] << 8) | bytes[pos + 1];
+            if (segLen < 2 || pos + segLen > len) return -1;
+            pos += segLen;
+            if (marker === 0xDA) {
+                while (pos + 1 < len) {
+                    if (bytes[pos] === 0xFF) {
+                        const next = bytes[pos + 1];
+                        if (next !== 0x00 && !(next >= 0xD0 && next <= 0xD7) && next !== 0xFF) {
+                            if (next === 0xD9) return pos + 2;
+                            break;
+                        }
+                    }
+                    pos++;
+                }
+            }
+        }
+        return -1;
+    };
+
+    // Fake DNG wrapper containing a JPEG with byte-stuffed 0xFF 0x00 inside SOS data
+    const fakeRaw = new Uint8Array([
+        0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, // TIFF header
+        0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x00, 0x00, // SOI + APP0 (len 4)
+        0xFF, 0xDA, 0x00, 0x04, 0x00, 0x00, // SOS (len 4)
+        0x12, 0xFF, 0x00, 0xD9, 0x34, // Stuffed 0xFF 0x00 followed by 0xD9 (not EOI!)
+        0xFF, 0xD9, // Real EOI
+        0x00, 0x00
+    ]);
+    const endOffset = findJpegEndOffset(fakeRaw, 6);
+    check('埋め込みJPEG抽出がバイトスタッフィング(FF 00)を誤認せず正確なEOI位置を検出する', endOffset === 27);
+}
+
 console.log('\n====================================================');
 console.log(` テスト完了: 合計 ${testCount} 項目中 ${passCount} 項目合格 (合格率: ${(passCount/testCount*100).toFixed(1)}%)`);
 console.log('====================================================');
