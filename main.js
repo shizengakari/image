@@ -2654,20 +2654,33 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- PWA: Service Worker 登録 & 自動アップデート ---
+    try {
+        if (sessionStorage.getItem('pwa_just_updated') === '1') {
+            sessionStorage.removeItem('pwa_just_updated');
+            showToast('アプリが最新版に更新されました');
+        }
+    } catch (_) {}
+
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js').then((registration) => {
+            const hadController = !!navigator.serviceWorker.controller;
+            let refreshing = false;
+
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!hadController || refreshing) return;
+                if (imageFiles.length === 0) {
+                    refreshing = true;
+                    try {
+                        sessionStorage.setItem('pwa_just_updated', '1');
+                    } catch (_) {}
+                    window.location.reload();
+                } else {
+                    showToast('アプリが最新版に更新されました');
+                }
+            });
+
+            navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((registration) => {
                 registration.update();
-                registration.addEventListener('updatefound', () => {
-                    const newWorker = registration.installing;
-                    if (newWorker) {
-                        newWorker.addEventListener('statechange', () => {
-                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                showToast('アプリが最新版に更新されました');
-                            }
-                        });
-                    }
-                });
             }).catch((err) => {
                 console.log('[PWA] Service Worker 登録エラー:', err);
             });

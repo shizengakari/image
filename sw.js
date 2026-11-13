@@ -1,7 +1,7 @@
 // sw.js - Service Worker for Image Editor PWA
 // アップデートが即座に反映される「Network First（ネットワーク優先）」戦略
 
-const CACHE_NAME = 'image-editor-v1.0.4';
+const CACHE_NAME = 'image-editor-v1.0.5';
 
 const ASSETS_TO_CACHE = [
     './',
@@ -14,11 +14,15 @@ const ASSETS_TO_CACHE = [
     './icon-512.png'
 ];
 
-// インストール時にコアアセットをキャッシュ
+// インストール時にコアアセットを最新取得してキャッシュ
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(ASSETS_TO_CACHE);
+            return Promise.all(
+                ASSETS_TO_CACHE.map((url) =>
+                    cache.add(new Request(url, { cache: 'reload' }))
+                )
+            );
         }).then(() => {
             // 新しいバージョンを即座にアクティブにする
             return self.skipWaiting();
@@ -51,9 +55,15 @@ self.addEventListener('fetch', (event) => {
     // GET リクエストのみ対象
     if (event.request.method !== 'GET') return;
 
+    const url = new URL(event.request.url);
+    const isSameOrigin = url.origin === self.location.origin;
+    const fetchRequest = (isSameOrigin && (event.request.mode === 'navigate' || /\.(html|css|js|json)$/i.test(url.pathname)))
+        ? new Request(event.request, { cache: 'no-cache' })
+        : event.request;
+
     // Google Fonts などの外部リクエストやローカルアセットを処理
     event.respondWith(
-        fetch(event.request)
+        fetch(fetchRequest)
             .then((networkResponse) => {
                 // 正常なレスポンスならキャッシュを更新
                 if (networkResponse && networkResponse.status === 200) {
