@@ -151,8 +151,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentFileIndex = 0;
     let imageStates = [];
     let imageHistories = [];
+    let renderedStateSignatures = [];
     let thumbUrls = [];
     let encodedOutputs = [];
+    let isReeditingFromComplete = false;
     let currentSourceImage = null;
     let currentObjectUrl = null;
     let activeTool = null;
@@ -410,6 +412,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         revokeEncodedUrls();
         revokeThumbUrls();
+        renderedStateSignatures = [];
+        isReeditingFromComplete = false;
         currentSourceImage = null;
         imageUpload.value = '';
         imageFiles = [];
@@ -1424,9 +1428,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const changed = gestureSnapshot && normCropChanged(gestureSnapshot.state.normCrop, state.normCrop);
         if (changed) {
             pushHistorySnapshot(gestureSnapshot.state, gestureSnapshot.viewMode);
-            // Resize or move completion -> maximize the cropped region to fill screen!
-            viewMode = 'crop';
-            relayoutWorkspace(true);
+            if (viewMode === 'crop') {
+                relayoutWorkspace(true);
+            }
         } else if (finishedDragType === 'pan-image') {
             relayoutWorkspace(false);
         }
@@ -2043,6 +2047,8 @@ document.addEventListener('DOMContentLoaded', () => {
         currentFileIndex = 0;
         imageStates = validFiles.map(() => createDefaultState());
         imageHistories = validFiles.map(() => ({ undo: [], redo: [] }));
+        renderedStateSignatures = [];
+        isReeditingFromComplete = false;
         revokeEncodedUrls();
         revokeThumbUrls();
         viewMode = 'full';
@@ -2091,13 +2097,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateEditorHeaderForMulti = () => {
         const isMulti = imageFiles.length > 1;
         const isLast = currentFileIndex >= imageFiles.length - 1;
+        const showCompleteCheck = isLast || isReeditingFromComplete;
 
         if (progressNav) progressNav.style.display = isMulti ? 'inline-flex' : 'none';
         if (progressIndicator) progressIndicator.textContent = `${currentFileIndex + 1} / ${imageFiles.length}`;
         if (btnPrevImage) btnPrevImage.disabled = currentFileIndex <= 0;
         if (btnNextEdit) btnNextEdit.disabled = isLast;
 
-        if (!isLast) {
+        if (!showCompleteCheck) {
             btnProcess.classList.remove('icon-only');
             btnProcessLabel.style.display = 'inline';
             btnProcessLabel.textContent = '次へ';
@@ -2159,8 +2166,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 resetNormCropForAspect(state.aspectMode);
             }
 
-            // Start each newly opened image in 'full' view unless user already cropped it smaller
-            viewMode = (state.normCrop && (state.normCrop.w < 0.82 && state.normCrop.h < 0.82)) ? 'crop' : 'full';
+            viewMode = 'full';
 
             rebuildPreviewBase();
             relayoutWorkspace(false);
@@ -2323,21 +2329,45 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    const enterReeditAtIndex = (targetIdx) => {
+        isReeditingFromComplete = true;
+        currentFileIndex = targetIdx;
+        showView(editorView);
+        loadCurrentImage();
+    };
+
     const reencodeAllAndRenderCompleteView = async ({ reuseThumbs = false, loadingPrefix = '仕上げ中' } = {}) => {
         const gen = ++encodeGeneration;
         const nextOutputs = [];
-        const nextThumbUrls = reuseThumbs ? thumbUrls.slice() : [];
+        const nextThumbUrls = reuseThumbs ? thumbUrls.slice() : new Array(imageFiles.length).fill(null);
+        const nextSignatures = new Array(imageFiles.length).fill('');
+        const previousUrlSet = new Set(encodedOutputs.map(o => o && o.objectUrl).filter(Boolean));
+        const previousThumbSet = new Set(thumbUrls.filter(Boolean));
+        const newlyCreatedUrls = [];
+        const newlyCreatedThumbs = [];
         let totalBytes = 0;
 
         for (let i = 0; i < imageFiles.length; i++) {
+            const state = imageStates[i] || createDefaultState();
+            const sig = JSON.stringify(state) + '|' + exportFormat;
+            const prevOut = encodedOutputs[i];
+
+            if (prevOut && renderedStateSignatures[i] === sig) {
+                nextOutputs.push(prevOut);
+                nextThumbUrls[i] = prevOut.thumbUrl || thumbUrls[i] || null;
+                nextSignatures[i] = sig;
+                totalBytes += prevOut.blob.size;
+                continue;
+            }
+
             if (imageFiles.length > 1) {
                 setRenderLoading(true, `${loadingPrefix} (${i + 1} / ${imageFiles.length})...`);
             }
             // Yield to UI thread so spinner/progress stays responsive
             await new Promise(r => setTimeout(r, 10));
             if (gen !== encodeGeneration) {
-                nextOutputs.forEach(o => URL.revokeObjectURL(o.objectUrl));
-                if (!reuseThumbs) nextThumbUrls.forEach(u => { if (u) URL.revokeObjectURL(u); });
+                newlyCreatedUrls.forEach(u => URL.revokeObjectURL(u));
+                newlyCreatedThumbs.forEach(u => URL.revokeObjectURL(u));
                 return;
             }
 
@@ -2345,19 +2375,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? currentSourceImage
                 : await loadDecodedImageForFile(imageFiles[i]);
             if (gen !== encodeGeneration) {
-                nextOutputs.forEach(o => URL.revokeObjectURL(o.objectUrl));
-                if (!reuseThumbs) nextThumbUrls.forEach(u => { if (u) URL.revokeObjectURL(u); });
+                newlyCreatedUrls.forEach(u => URL.revokeObjectURL(u));
+                newlyCreatedThumbs.forEach(u => URL.revokeObjectURL(u));
                 return;
             }
 
-            const state = imageStates[i] || createDefaultState();
             const rendered = renderFinalCanvas(img, state, imageFiles[i], i);
 
             let thumbUrl = nextThumbUrls[i] || null;
-            if (!reuseThumbs && imageFiles.length > 1) {
+            if ((!reuseThumbs || !thumbUrl) && imageFiles.length > 1) {
                 const thumbBlob = await createThumbnailBlob(rendered.canvas, 480);
                 if (thumbBlob) {
                     thumbUrl = URL.createObjectURL(thumbBlob);
+                    newlyCreatedThumbs.push(thumbUrl);
                 }
                 nextThumbUrls[i] = thumbUrl;
             }
@@ -2368,14 +2398,16 @@ document.addEventListener('DOMContentLoaded', () => {
             rendered.canvas.height = 0;
 
             if (gen !== encodeGeneration) {
-                nextOutputs.forEach(o => URL.revokeObjectURL(o.objectUrl));
-                if (!reuseThumbs) nextThumbUrls.forEach(u => { if (u) URL.revokeObjectURL(u); });
+                newlyCreatedUrls.forEach(u => URL.revokeObjectURL(u));
+                newlyCreatedThumbs.forEach(u => URL.revokeObjectURL(u));
                 return;
             }
 
             const objectUrl = URL.createObjectURL(blob);
+            newlyCreatedUrls.push(objectUrl);
             const filename = buildSafeFilename(rendered.originalFile, rendered.index, exportFormat);
             totalBytes += blob.size;
+            nextSignatures[i] = sig;
             nextOutputs.push({
                 index: rendered.index,
                 blob,
@@ -2388,16 +2420,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (gen !== encodeGeneration) {
-            nextOutputs.forEach(o => URL.revokeObjectURL(o.objectUrl));
-            if (!reuseThumbs) nextThumbUrls.forEach(u => { if (u) URL.revokeObjectURL(u); });
+            newlyCreatedUrls.forEach(u => URL.revokeObjectURL(u));
+            newlyCreatedThumbs.forEach(u => URL.revokeObjectURL(u));
             return;
         }
 
-        revokeEncodedUrls();
-        if (!reuseThumbs) {
-            revokeThumbUrls();
-            thumbUrls = nextThumbUrls;
-        }
+        const keptUrls = new Set(nextOutputs.map(o => o.objectUrl));
+        previousUrlSet.forEach(u => {
+            if (!keptUrls.has(u)) URL.revokeObjectURL(u);
+        });
+        const keptThumbs = new Set(nextThumbUrls.filter(Boolean));
+        previousThumbSet.forEach(u => {
+            if (!keptThumbs.has(u)) URL.revokeObjectURL(u);
+        });
+
+        thumbUrls = nextThumbUrls;
+        renderedStateSignatures = nextSignatures;
         encodedOutputs = nextOutputs;
 
         const isSingle = encodedOutputs.length === 1;
@@ -2447,9 +2485,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 editBtn.className = 'batch-item-btn';
                 editBtn.textContent = '編集';
                 editBtn.addEventListener('click', () => {
-                    currentFileIndex = out.index;
-                    showView(editorView);
-                    loadCurrentImage();
+                    enterReeditAtIndex(out.index);
                 });
 
                 actions.appendChild(editBtn);
@@ -2474,6 +2510,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             await reencodeAllAndRenderCompleteView({ reuseThumbs: false, loadingPrefix: '仕上げ中' });
+            isReeditingFromComplete = false;
             showView(completeView);
             const completeBodyEl = completeView ? completeView.querySelector('.complete-body') : null;
             if (completeBodyEl) completeBodyEl.scrollTop = 0;
@@ -2539,37 +2576,126 @@ document.addEventListener('DOMContentLoaded', () => {
     if (lightboxBody) {
         let lbSwipeX = null;
         let lbSwipeY = null;
-        lightboxBody.addEventListener('pointerdown', (e) => {
-            lbSwipeX = e.clientX;
-            lbSwipeY = e.clientY;
-        });
-        lightboxBody.addEventListener('pointerup', (e) => {
-            if (lbSwipeX === null || encodedOutputs.length <= 1) return;
-            const dx = e.clientX - lbSwipeX;
-            const dy = e.clientY - lbSwipeY;
+        let lbActivePid = null;
+        let lbSuppressClickClose = false;
+
+        if (lightboxImage) {
+            lightboxImage.setAttribute('draggable', 'false');
+            lightboxImage.addEventListener('dragstart', (e) => e.preventDefault());
+        }
+
+        const resetLbDragVisual = () => {
+            if (lightboxImage) {
+                lightboxImage.style.transition = '';
+                lightboxImage.style.transform = '';
+                lightboxImage.style.opacity = '';
+            }
+        };
+
+        const finishLbSwipe = (clientX, clientY) => {
+            if (lbSwipeX === null) return;
+            const dx = clientX - lbSwipeX;
+            const dy = clientY - lbSwipeY;
             lbSwipeX = null;
             lbSwipeY = null;
-            if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) {
-                stepLightbox(dx < 0 ? 1 : -1);
-            }
-        });
-    }
+            lbActivePid = null;
 
-    if (lightboxModal) {
+            if (encodedOutputs.length > 1 && Math.abs(dx) > 42 && Math.abs(dx) > Math.abs(dy) * 1.1) {
+                lbSuppressClickClose = true;
+                setTimeout(() => { lbSuppressClickClose = false; }, 120);
+                resetLbDragVisual();
+                stepLightbox(dx < 0 ? 1 : -1);
+                return;
+            }
+            if (Math.abs(dx) > 8) {
+                lbSuppressClickClose = true;
+                setTimeout(() => { lbSuppressClickClose = false; }, 120);
+            }
+            resetLbDragVisual();
+        };
+
+        if (window.PointerEvent) {
+            lightboxBody.addEventListener('pointerdown', (e) => {
+                if (e.button && e.button !== 0) return;
+                lbSwipeX = e.clientX;
+                lbSwipeY = e.clientY;
+                lbActivePid = e.pointerId;
+                if (lightboxImage) {
+                    lightboxImage.style.transition = 'none';
+                }
+            });
+            lightboxBody.addEventListener('pointermove', (e) => {
+                if (lbSwipeX === null || e.pointerId !== lbActivePid || encodedOutputs.length <= 1) return;
+                const dx = e.clientX - lbSwipeX;
+                const dy = e.clientY - lbSwipeY;
+                if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+                    const clamped = Math.max(-110, Math.min(110, dx));
+                    if (lightboxImage) {
+                        lightboxImage.style.transform = `translate3d(${clamped}px, 0, 0)`;
+                    }
+                }
+            });
+            lightboxBody.addEventListener('pointerup', (e) => {
+                if (e.pointerId !== lbActivePid) return;
+                finishLbSwipe(e.clientX, e.clientY);
+            });
+            lightboxBody.addEventListener('pointercancel', () => {
+                lbSwipeX = null;
+                lbSwipeY = null;
+                lbActivePid = null;
+                resetLbDragVisual();
+            });
+        } else {
+            lightboxBody.addEventListener('touchstart', (e) => {
+                if (!e.touches || !e.touches[0]) return;
+                lbSwipeX = e.touches[0].clientX;
+                lbSwipeY = e.touches[0].clientY;
+            }, { passive: true });
+            lightboxBody.addEventListener('touchend', (e) => {
+                if (!e.changedTouches || !e.changedTouches[0]) return;
+                finishLbSwipe(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+            });
+        }
+
+        if (lightboxModal) {
+            lightboxModal.addEventListener('click', (e) => {
+                if (lbSuppressClickClose) {
+                    lbSuppressClickClose = false;
+                    return;
+                }
+                if (e.target === lightboxModal || e.target === lightboxBody) {
+                    closeLightbox();
+                }
+            });
+        }
+    } else if (lightboxModal) {
         lightboxModal.addEventListener('click', (e) => {
             if (e.target === lightboxModal || e.target.classList.contains('lightbox-body')) {
                 closeLightbox();
             }
         });
     }
+
+    window.addEventListener('keydown', (e) => {
+        if (!lightboxModal || !lightboxModal.classList.contains('open')) return;
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            stepLightbox(1);
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            stepLightbox(-1);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            closeLightbox();
+        }
+    });
+
     if (btnLightboxEdit) {
         btnLightboxEdit.addEventListener('click', () => {
             if (lightboxIndex < 0) return;
             const targetIdx = lightboxIndex;
             closeLightbox();
-            currentFileIndex = targetIdx;
-            showView(editorView);
-            loadCurrentImage();
+            enterReeditAtIndex(targetIdx);
         });
     }
     // --- Format Selection ---
@@ -2606,6 +2732,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     btnBack.addEventListener('click', () => {
+        if (isReeditingFromComplete) {
+            isReeditingFromComplete = false;
+            showView(completeView);
+            return;
+        }
         if (currentFileIndex > 0) {
             currentFileIndex--;
             loadCurrentImage();
@@ -2616,8 +2747,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (btnCompleteBack) {
         btnCompleteBack.addEventListener('click', () => {
-            showView(editorView);
-            loadCurrentImage();
+            enterReeditAtIndex(currentFileIndex);
         });
     }
 
@@ -2627,7 +2757,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnProcess.addEventListener('click', () => {
         if (!currentSourceImage) return;
-        if (currentFileIndex < imageFiles.length - 1) {
+        if (!isReeditingFromComplete && currentFileIndex < imageFiles.length - 1) {
             currentFileIndex++;
             loadCurrentImage();
         } else {
