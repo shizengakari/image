@@ -24,20 +24,56 @@
 <body>
     <div class="app-container">
         
-        <!-- Upload View: Minimal, single action -->
+        <!-- Upload View: Mode Menu (Edit / Convert) + Image Upload -->
         <div id="upload-view" class="view active">
             <div class="upload-content">
                 <input type="file" id="image-upload" accept="image/*" class="file-input" multiple>
-                <button type="button" class="upload-minimal-btn" id="btn-trigger-upload">
-                    <span class="upload-icon-circle">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect>
-                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                            <polyline points="21 15 16 10 5 21"></polyline>
-                        </svg>
-                    </span>
-                    <span class="upload-minimal-label">画像を選択</span>
-                </button>
+
+                <div class="upload-stack">
+                    <!-- 2 Menus: 編集 / 変換 -->
+                    <div class="mode-menu-grid" id="upload-mode-menu" role="tablist" aria-label="機能メニュー">
+                        <button type="button" class="mode-menu-card active" data-mode="edit" role="tab" aria-selected="true">
+                            <span class="mode-menu-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 20h9"></path>
+                                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                                </svg>
+                            </span>
+                            <span class="mode-menu-text">
+                                <span class="mode-menu-title">編集</span>
+                                <span class="mode-menu-desc">切り抜き・調整</span>
+                            </span>
+                        </button>
+
+                        <button type="button" class="mode-menu-card" data-mode="convert" role="tab" aria-selected="false">
+                            <span class="mode-menu-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="17 1 21 5 17 9"></polyline>
+                                    <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                                    <polyline points="7 23 3 19 7 15"></polyline>
+                                    <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+                                </svg>
+                            </span>
+                            <span class="mode-menu-text">
+                                <span class="mode-menu-title">変換</span>
+                                <span class="mode-menu-desc">形式をまとめて変換</span>
+                            </span>
+                        </button>
+                    </div>
+
+                    <!-- Main Image Upload Trigger -->
+                    <button type="button" class="upload-minimal-btn" id="btn-trigger-upload">
+                        <span class="upload-icon-circle" id="upload-icon-circle">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect>
+                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                <polyline points="21 15 16 10 5 21"></polyline>
+                            </svg>
+                        </span>
+                        <span class="upload-minimal-label" id="upload-action-label">編集する画像を選択</span>
+                        <span class="upload-minimal-hint" id="upload-action-hint">複数枚選択OK・ドロップ対応</span>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -530,6 +566,78 @@
                             <line x1="12" y1="15" x2="12" y2="3"></line>
                         </svg>
                         <span id="btn-download-all-label">保存</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Convert View (Pure Format Conversion for Multiple Images) -->
+        <div id="convert-view" class="view">
+            <div class="editor-header glass">
+                <button type="button" class="btn icon-btn" id="btn-convert-back" aria-label="戻る" title="戻る">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </button>
+                <div class="progress-pill" id="convert-header-pill">画像変換</div>
+                <button type="button" class="btn convert-add-pill" id="btn-convert-add" aria-label="画像を追加" title="画像を追加">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    <span>追加</span>
+                </button>
+            </div>
+
+            <div class="convert-body" id="convert-body">
+                <div id="convert-list" class="convert-list"></div>
+
+                <div id="convert-empty-state" class="convert-empty-state" style="display: none;">
+                    <p class="convert-empty-text">画像が選択されていません</p>
+                    <button type="button" class="btn primary-btn" id="btn-convert-empty-pick">画像を選択</button>
+                </div>
+            </div>
+
+            <div class="complete-save-dock convert-dock glass">
+                <div id="convert-progress-wrap" class="convert-progress-wrap" style="display: none;">
+                    <div class="convert-progress-meta">
+                        <span id="convert-progress-label">変換中...</span>
+                        <span id="convert-progress-count">0 / 0</span>
+                    </div>
+                    <div class="convert-progress-track">
+                        <div id="convert-progress-bar" class="convert-progress-bar"></div>
+                    </div>
+                </div>
+
+                <div class="export-row">
+                    <span class="export-label">変換先</span>
+                    <div class="format-pills" id="convert-format-pills">
+                        <button type="button" class="format-pill active" data-format="image/jpeg">JPEG</button>
+                        <button type="button" class="format-pill" data-format="image/png">PNG</button>
+                        <button type="button" class="format-pill" data-format="image/webp">WebP</button>
+                    </div>
+                    <span class="export-size-badge" id="convert-summary-badge"></span>
+                </div>
+
+                <div class="complete-bottom-bar">
+                    <button type="button" class="btn primary-btn convert-action-btn" id="btn-convert-start">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="17 1 21 5 17 9"></polyline>
+                            <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                            <polyline points="7 23 3 19 7 15"></polyline>
+                            <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+                        </svg>
+                        <span id="btn-convert-start-label">JPEGに変換する</span>
+                    </button>
+
+                    <button type="button" class="btn convert-download-btn" id="btn-convert-download-all" style="display: none;">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span id="btn-convert-download-label">ダウンロード</span>
                     </button>
                 </div>
             </div>

@@ -3,10 +3,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const uploadView = document.getElementById('upload-view');
     const editorView = document.getElementById('editor-view');
     const completeView = document.getElementById('complete-view');
+    const convertView = document.getElementById('convert-view');
 
     // --- Upload Elements ---
+    const uploadModeMenu = document.getElementById('upload-mode-menu');
     const btnTriggerUpload = document.getElementById('btn-trigger-upload');
+    const uploadActionLabel = document.getElementById('upload-action-label');
+    const uploadActionHint = document.getElementById('upload-action-hint');
     const imageUpload = document.getElementById('image-upload');
+
+    // --- Convert View Elements ---
+    const btnConvertBack = document.getElementById('btn-convert-back');
+    const convertHeaderPill = document.getElementById('convert-header-pill');
+    const btnConvertAdd = document.getElementById('btn-convert-add');
+    const convertBody = document.getElementById('convert-body');
+    const convertList = document.getElementById('convert-list');
+    const convertEmptyState = document.getElementById('convert-empty-state');
+    const btnConvertEmptyPick = document.getElementById('btn-convert-empty-pick');
+    const convertProgressWrap = document.getElementById('convert-progress-wrap');
+    const convertProgressLabel = document.getElementById('convert-progress-label');
+    const convertProgressCount = document.getElementById('convert-progress-count');
+    const convertProgressBar = document.getElementById('convert-progress-bar');
+    const convertFormatPills = document.getElementById('convert-format-pills');
+    const convertSummaryBadge = document.getElementById('convert-summary-badge');
+    const btnConvertStart = document.getElementById('btn-convert-start');
+    const btnConvertStartLabel = document.getElementById('btn-convert-start-label');
+    const btnConvertDownloadAll = document.getElementById('btn-convert-download-all');
+    const btnConvertDownloadLabel = document.getElementById('btn-convert-download-label');
 
     // --- Editor Header Elements ---
     const btnBack = document.getElementById('btn-back');
@@ -147,6 +170,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Application State ---
+    let uploadMode = 'edit'; // 'edit' | 'convert'
+    let uploadTarget = 'start'; // 'start' | 'convert-append'
+    let convertItems = [];
+    let convertNextId = 1;
+    let convertFormat = 'image/jpeg';
+    let isConverting = false;
+    let convertSessionId = 0;
+
     let imageFiles = [];
     let currentFileIndex = 0;
     let imageStates = [];
@@ -217,11 +248,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     })();
 
-    const webpPill = formatPillsContainer ? formatPillsContainer.querySelector('[data-format="image/webp"]') : null;
-    if (webpPill && !supportsWebPEncode) {
-        webpPill.disabled = true;
-        webpPill.title = 'このブラウザではWebP出力に対応していません';
-    }
+    [formatPillsContainer, convertFormatPills].forEach((containerEl) => {
+        const pill = containerEl ? containerEl.querySelector('[data-format="image/webp"]') : null;
+        if (pill && !supportsWebPEncode) {
+            pill.disabled = true;
+            pill.title = 'このブラウザではWebP出力に対応していません';
+        }
+    });
 
     let toastTimer = null;
     const showToast = (message) => {
@@ -388,8 +421,18 @@ document.addEventListener('DOMContentLoaded', () => {
         thumbUrls = [];
     };
 
+    const clearConvertItems = () => {
+        convertSessionId++;
+        isConverting = false;
+        convertItems.forEach((item) => {
+            if (item.thumbUrl) URL.revokeObjectURL(item.thumbUrl);
+            if (item.outputUrl) URL.revokeObjectURL(item.outputUrl);
+        });
+        convertItems = [];
+    };
+
     const showView = (viewEl) => {
-        [uploadView, editorView, completeView].forEach(v => {
+        [uploadView, editorView, completeView, convertView].forEach(v => {
             if (v) v.classList.toggle('active', v === viewEl);
         });
     };
@@ -399,6 +442,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (formatPillsContainer) {
             Array.from(formatPillsContainer.querySelectorAll('.format-pill')).forEach(p => {
                 p.classList.toggle('active', p.getAttribute('data-format') === exportFormat);
+            });
+        }
+        convertFormat = 'image/jpeg';
+        if (convertFormatPills) {
+            Array.from(convertFormatPills.querySelectorAll('.format-pill')).forEach(p => {
+                p.classList.toggle('active', p.getAttribute('data-format') === convertFormat);
             });
         }
     };
@@ -412,6 +461,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         revokeEncodedUrls();
         revokeThumbUrls();
+        clearConvertItems();
+        uploadTarget = 'start';
         renderedStateSignatures = [];
         isReeditingFromComplete = false;
         currentSourceImage = null;
@@ -2031,8 +2082,42 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error('Unsupported or corrupted image format');
     };
 
+    // --- Upload Mode Menu (Edit / Convert) & File Routing ---
+    const setUploadMode = (mode) => {
+        uploadMode = (mode === 'convert') ? 'convert' : 'edit';
+        if (uploadModeMenu) {
+            Array.from(uploadModeMenu.querySelectorAll('.mode-menu-card')).forEach((card) => {
+                const isSelected = card.getAttribute('data-mode') === uploadMode;
+                card.classList.toggle('active', isSelected);
+                card.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+            });
+        }
+        if (btnTriggerUpload) {
+            btnTriggerUpload.classList.toggle('convert-mode', uploadMode === 'convert');
+        }
+        if (uploadActionLabel) {
+            uploadActionLabel.textContent = uploadMode === 'convert'
+                ? '変換する画像を選択'
+                : '編集する画像を選択';
+        }
+        if (uploadActionHint) {
+            uploadActionHint.textContent = uploadMode === 'convert'
+                ? '何枚でも選択OK（JPEG / PNG / WebP）'
+                : '複数枚選択OK・ドロップ対応';
+        }
+    };
+
+    if (uploadModeMenu) {
+        uploadModeMenu.addEventListener('click', (e) => {
+            const card = e.target.closest('.mode-menu-card');
+            if (!card) return;
+            setUploadMode(card.getAttribute('data-mode'));
+        });
+    }
+
     // --- File Loading & Multi-Image Editor Navigation ---
     btnTriggerUpload.addEventListener('click', () => {
+        uploadTarget = 'start';
         imageUpload.click();
     });
 
@@ -2061,7 +2146,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.files && e.target.files.length > 0) {
             const selected = Array.from(e.target.files);
             imageUpload.value = '';
-            handleSelectedFiles(selected);
+            const target = uploadTarget;
+            uploadTarget = 'start';
+            if (target === 'convert-append') {
+                appendFilesToConvert(selected);
+            } else if (uploadMode === 'convert') {
+                startConvertFlow(selected);
+            } else {
+                handleSelectedFiles(selected);
+            }
         }
     });
 
@@ -2082,15 +2175,38 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('drop', (e) => {
-        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            handleSelectedFiles(e.dataTransfer.files);
+        if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+        const droppedFiles = Array.from(e.dataTransfer.files);
+        if (convertView && convertView.classList.contains('active')) {
+            appendFilesToConvert(droppedFiles);
+            return;
         }
+        if (uploadView.classList.contains('active')) {
+            const modeCard = e.target && e.target.closest ? e.target.closest('.mode-menu-card') : null;
+            if (modeCard) {
+                setUploadMode(modeCard.getAttribute('data-mode'));
+            }
+            if (uploadMode === 'convert') {
+                startConvertFlow(droppedFiles);
+            } else {
+                handleSelectedFiles(droppedFiles);
+            }
+            return;
+        }
+        handleSelectedFiles(droppedFiles);
     });
 
     window.addEventListener('paste', (e) => {
-        if (!uploadView.classList.contains('active')) return;
-        if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
-            handleSelectedFiles(e.clipboardData.files);
+        if (!e.clipboardData || !e.clipboardData.files || e.clipboardData.files.length === 0) return;
+        const pastedFiles = Array.from(e.clipboardData.files);
+        if (convertView && convertView.classList.contains('active')) {
+            appendFilesToConvert(pastedFiles);
+        } else if (uploadView.classList.contains('active')) {
+            if (uploadMode === 'convert') {
+                startConvertFlow(pastedFiles);
+            } else {
+                handleSelectedFiles(pastedFiles);
+            }
         }
     });
 
@@ -2275,17 +2391,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    const encodeCanvasToBlob = (canvas, format, quality) => {
+    const encodeCanvasToBlob = (canvas, format, quality, jpegBg = '#000000') => {
         return new Promise((resolve, reject) => {
             let opaqueCanvas = null;
             let sourceCanvas = canvas;
-            // JPEG has no alpha channel; composite onto black background cleanly
+            // JPEG has no alpha channel; composite onto solid background cleanly
             if (format === 'image/jpeg') {
                 opaqueCanvas = document.createElement('canvas');
                 opaqueCanvas.width = canvas.width;
                 opaqueCanvas.height = canvas.height;
                 const octx = opaqueCanvas.getContext('2d');
-                octx.fillStyle = '#000000';
+                octx.fillStyle = jpegBg;
                 octx.fillRect(0, 0, opaqueCanvas.width, opaqueCanvas.height);
                 octx.drawImage(canvas, 0, 0);
                 sourceCanvas = opaqueCanvas;
@@ -2775,9 +2891,551 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(encodedOutputs.length === 1 ? '保存しました' : `${encodedOutputs.length}枚を保存しています`);
     });
 
+    // --- Pure Batch Format Conversion Flow ---
+    const getOriginalFormatLabel = (file) => {
+        const name = (file && file.name) ? file.name : '';
+        const extMatch = name.match(/\.([^.]+)$/);
+        if (extMatch && extMatch[1]) {
+            return extMatch[1].toUpperCase();
+        }
+        if (file && file.type && file.type.includes('/')) {
+            return file.type.split('/')[1].toUpperCase();
+        }
+        return 'IMG';
+    };
+
+    const createThumbUrlFromImage = (img, maxDim = 140) => {
+        return new Promise((resolve) => {
+            try {
+                const maxSide = Math.max(img.naturalWidth, img.naturalHeight);
+                const scale = maxSide > maxDim ? (maxDim / maxSide) : 1;
+                const tw = Math.max(1, Math.round(img.naturalWidth * scale));
+                const th = Math.max(1, Math.round(img.naturalHeight * scale));
+                const tc = document.createElement('canvas');
+                tc.width = tw;
+                tc.height = th;
+                const tctx = tc.getContext('2d');
+                tctx.fillStyle = '#ffffff';
+                tctx.fillRect(0, 0, tw, th);
+                tctx.imageSmoothingEnabled = true;
+                tctx.imageSmoothingQuality = 'high';
+                tctx.drawImage(img, 0, 0, tw, th);
+
+                const finish = (blob) => {
+                    tc.width = 0;
+                    tc.height = 0;
+                    resolve(blob ? URL.createObjectURL(blob) : null);
+                };
+
+                if (tc.toBlob) {
+                    tc.toBlob((blob) => finish(blob), 'image/jpeg', 0.8);
+                } else {
+                    const dataUrl = tc.toDataURL('image/jpeg', 0.8);
+                    const bstr = atob(dataUrl.split(',')[1]);
+                    let n = bstr.length;
+                    const u8arr = new Uint8Array(n);
+                    while (n--) u8arr[n] = bstr.charCodeAt(n);
+                    finish(new Blob([u8arr], { type: 'image/jpeg' }));
+                }
+            } catch (_) {
+                resolve(null);
+            }
+        });
+    };
+
+    const buildConvertItem = (file) => ({
+        id: convertNextId++,
+        file,
+        name: (file && file.name) ? file.name : `image_${convertNextId}`,
+        origExt: getOriginalFormatLabel(file),
+        origSize: (file && typeof file.size === 'number') ? file.size : 0,
+        thumbUrl: null,
+        status: 'pending', // 'pending' | 'converting' | 'done' | 'error'
+        blob: null,
+        outputUrl: null,
+        outputFilename: '',
+        outputSize: 0,
+        width: 0,
+        height: 0,
+        errorMsg: ''
+    });
+
+    const resetConvertOutputsToPending = () => {
+        convertItems.forEach((item) => {
+            if (item.outputUrl) {
+                URL.revokeObjectURL(item.outputUrl);
+                item.outputUrl = null;
+            }
+            item.blob = null;
+            item.outputFilename = '';
+            item.outputSize = 0;
+            item.status = 'pending';
+            item.errorMsg = '';
+        });
+    };
+
+    const generateInitialThumbsForConvert = async (itemsToThumb, sessionId) => {
+        for (const item of itemsToThumb) {
+            if (sessionId !== convertSessionId) return;
+            if (item.thumbUrl) continue;
+            // Skip slow external decoders until conversion; quick-preview native formats immediately
+            const lower = item.name.toLowerCase();
+            const needsHeavyDecoder = /\.(heic|heif|hif|tif|tiff|dng|raw|cr2|cr3|nef|nrw|arw|srf|sr2|orf|rw2|raf|pef|srw|x3f|3fr|rwl|iiq)$/i.test(lower);
+            if (needsHeavyDecoder) continue;
+            try {
+                const img = await loadImageFromBlob(item.file);
+                if (sessionId !== convertSessionId) return;
+                item.width = img.naturalWidth;
+                item.height = img.naturalHeight;
+                const url = await createThumbUrlFromImage(img);
+                if (sessionId !== convertSessionId) {
+                    if (url) URL.revokeObjectURL(url);
+                    return;
+                }
+                if (url) {
+                    item.thumbUrl = url;
+                    renderConvertView();
+                }
+            } catch (_) {}
+            await new Promise((r) => setTimeout(r, 4));
+        }
+    };
+
+    const renderConvertView = () => {
+        if (!convertView) return;
+        const totalCount = convertItems.length;
+        const doneItems = convertItems.filter((it) => it.status === 'done');
+        const pendingItems = convertItems.filter((it) => it.status === 'pending' || it.status === 'converting');
+        const formatLabel = (FORMAT_META[convertFormat] || FORMAT_META['image/jpeg']).label;
+
+        if (convertHeaderPill) {
+            convertHeaderPill.textContent = totalCount > 0 ? `画像変換（${totalCount}枚）` : '画像変換';
+        }
+        if (btnConvertAdd) {
+            btnConvertAdd.disabled = isConverting;
+        }
+        if (convertFormatPills) {
+            Array.from(convertFormatPills.querySelectorAll('.format-pill')).forEach((pill) => {
+                const fmt = pill.getAttribute('data-format');
+                pill.classList.toggle('active', fmt === convertFormat);
+                if (fmt === 'image/webp' && !supportsWebPEncode) {
+                    pill.disabled = true;
+                } else {
+                    pill.disabled = isConverting;
+                }
+            });
+        }
+
+        if (convertEmptyState && convertList) {
+            if (totalCount === 0) {
+                convertEmptyState.style.display = 'flex';
+                convertList.style.display = 'none';
+                convertList.innerHTML = '';
+            } else {
+                convertEmptyState.style.display = 'none';
+                convertList.style.display = 'flex';
+                convertList.innerHTML = '';
+
+                convertItems.forEach((item) => {
+                    const row = document.createElement('div');
+                    row.className = `convert-item status-${item.status}`;
+
+                    const thumb = document.createElement('div');
+                    thumb.className = 'convert-item-thumb';
+                    if (item.thumbUrl) {
+                        const imgEl = document.createElement('img');
+                        imgEl.src = item.thumbUrl;
+                        imgEl.alt = item.name;
+                        thumb.appendChild(imgEl);
+                    } else {
+                        thumb.textContent = item.origExt.slice(0, 4);
+                    }
+
+                    const info = document.createElement('div');
+                    info.className = 'convert-item-info';
+
+                    const nameEl = document.createElement('div');
+                    nameEl.className = 'convert-item-name';
+                    nameEl.textContent = item.status === 'done' && item.outputFilename
+                        ? item.outputFilename
+                        : item.name;
+
+                    const metaEl = document.createElement('div');
+                    metaEl.className = 'convert-item-meta';
+
+                    const origText = document.createElement('span');
+                    if (item.status === 'done') {
+                        origText.textContent = `${item.origExt} → ${formatLabel} • ${formatBytes(item.outputSize)}`;
+                    } else if (item.origSize > 0) {
+                        origText.textContent = `${item.origExt} • ${formatBytes(item.origSize)}`;
+                    } else {
+                        origText.textContent = item.origExt;
+                    }
+                    metaEl.appendChild(origText);
+
+                    if (item.status === 'converting') {
+                        const badge = document.createElement('span');
+                        badge.className = 'convert-status-badge converting';
+                        badge.textContent = '変換中';
+                        metaEl.appendChild(badge);
+                    } else if (item.status === 'done') {
+                        const badge = document.createElement('span');
+                        badge.className = 'convert-status-badge done';
+                        badge.textContent = '✓ 完了';
+                        metaEl.appendChild(badge);
+                    } else if (item.status === 'error') {
+                        const badge = document.createElement('span');
+                        badge.className = 'convert-status-badge error';
+                        badge.textContent = item.errorMsg || '変換失敗';
+                        metaEl.appendChild(badge);
+                    }
+
+                    info.appendChild(nameEl);
+                    info.appendChild(metaEl);
+
+                    const actions = document.createElement('div');
+                    actions.className = 'convert-item-actions';
+
+                    if (item.status === 'done' && item.blob) {
+                        const dlBtn = document.createElement('button');
+                        dlBtn.type = 'button';
+                        dlBtn.className = 'convert-item-dl-btn';
+                        dlBtn.setAttribute('aria-label', `${item.outputFilename} をダウンロード`);
+                        dlBtn.innerHTML = `
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            <span>保存</span>
+                        `;
+                        dlBtn.addEventListener('click', () => {
+                            triggerBlobDownload(item.blob, item.outputFilename);
+                            showToast('ダウンロードしました');
+                        });
+                        actions.appendChild(dlBtn);
+                    }
+
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'convert-item-remove-btn';
+                    removeBtn.disabled = isConverting;
+                    removeBtn.setAttribute('aria-label', `${item.name} を削除`);
+                    removeBtn.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    `;
+                    removeBtn.addEventListener('click', () => {
+                        if (isConverting) return;
+                        if (item.thumbUrl) URL.revokeObjectURL(item.thumbUrl);
+                        if (item.outputUrl) URL.revokeObjectURL(item.outputUrl);
+                        convertItems = convertItems.filter((it) => it.id !== item.id);
+                        renderConvertView();
+                    });
+                    actions.appendChild(removeBtn);
+
+                    row.appendChild(thumb);
+                    row.appendChild(info);
+                    row.appendChild(actions);
+                    convertList.appendChild(row);
+                });
+            }
+        }
+
+        if (convertSummaryBadge) {
+            if (totalCount === 0) {
+                convertSummaryBadge.textContent = '';
+            } else if (pendingItems.length === 0 && doneItems.length > 0) {
+                const totalBytes = doneItems.reduce((acc, it) => acc + it.outputSize, 0);
+                convertSummaryBadge.textContent = doneItems.length === 1
+                    ? formatBytes(totalBytes)
+                    : `合計 ${formatBytes(totalBytes)}`;
+            } else {
+                convertSummaryBadge.textContent = `${totalCount}枚`;
+            }
+        }
+
+        const allReadyToDownload = !isConverting && totalCount > 0 && pendingItems.length === 0 && doneItems.length > 0;
+
+        if (btnConvertStart && btnConvertDownloadAll) {
+            if (allReadyToDownload) {
+                btnConvertStart.style.display = 'none';
+                btnConvertDownloadAll.style.display = 'inline-flex';
+                if (btnConvertDownloadLabel) {
+                    btnConvertDownloadLabel.textContent = doneItems.length === 1
+                        ? 'ダウンロード'
+                        : `すべてダウンロード（${doneItems.length}枚）`;
+                }
+            } else {
+                btnConvertDownloadAll.style.display = 'none';
+                btnConvertStart.style.display = 'inline-flex';
+                const hasRetryable = convertItems.some((it) => it.status === 'pending' || it.status === 'error');
+                btnConvertStart.disabled = isConverting || totalCount === 0 || !hasRetryable;
+                if (btnConvertStartLabel) {
+                    const targetCount = convertItems.filter((it) => it.status === 'pending' || it.status === 'error').length;
+                    if (isConverting) {
+                        btnConvertStartLabel.textContent = '変換しています...';
+                    } else if (targetCount > 1) {
+                        btnConvertStartLabel.textContent = `${targetCount}枚を${formatLabel}に変換する`;
+                    } else {
+                        btnConvertStartLabel.textContent = `${formatLabel}に変換する`;
+                    }
+                }
+            }
+        }
+
+        if (convertProgressWrap) {
+            convertProgressWrap.style.display = isConverting ? 'flex' : 'none';
+        }
+    };
+
+    const startConvertFlow = (fileList) => {
+        const validFiles = Array.from(fileList).filter(isSupportedImageFile);
+        if (validFiles.length === 0) {
+            showToast('対応している画像が見つかりませんでした');
+            return;
+        }
+        clearConvertItems();
+        const sessionId = convertSessionId;
+        convertItems = validFiles.map(buildConvertItem);
+        showView(convertView);
+        if (convertBody) convertBody.scrollTop = 0;
+        renderConvertView();
+        generateInitialThumbsForConvert(convertItems, sessionId);
+    };
+
+    const appendFilesToConvert = (fileList) => {
+        if (isConverting) {
+            showToast('変換中は画像を追加できません');
+            return;
+        }
+        const validFiles = Array.from(fileList).filter(isSupportedImageFile);
+        if (validFiles.length === 0) {
+            showToast('対応している画像が見つかりませんでした');
+            return;
+        }
+        const sessionId = convertSessionId;
+        const added = validFiles.map(buildConvertItem);
+        convertItems = convertItems.concat(added);
+        renderConvertView();
+        generateInitialThumbsForConvert(added, sessionId);
+        showToast(`${added.length}枚を追加しました`);
+    };
+
+    const buildUniqueConvertFilename = (originalFile, index, format, usedNamesSet) => {
+        const meta = FORMAT_META[format] || FORMAT_META['image/jpeg'];
+        const rawName = (originalFile && originalFile.name) ? originalFile.name : `photo_${index + 1}`;
+        const baseName = rawName.replace(/\.[^/.]+$/, '').replace(/[\\/:*?"<>|]/g, '_') || `photo_${index + 1}`;
+        let candidate = `${baseName}.${meta.ext}`;
+        let suffix = 2;
+        while (usedNamesSet.has(candidate.toLowerCase())) {
+            candidate = `${baseName}_${suffix}.${meta.ext}`;
+            suffix++;
+        }
+        usedNamesSet.add(candidate.toLowerCase());
+        return candidate;
+    };
+
+    const encodePureImageToBlob = async (img, format) => {
+        const natW = Math.max(1, img.naturalWidth);
+        const natH = Math.max(1, img.naturalHeight);
+        const MAX_SAFE_PIXELS = 36000000;
+        const MAX_SAFE_DIM = 8192;
+
+        const renderAtMaxDim = async (maxDimLimit, maxPixelLimit) => {
+            let scale = 1;
+            if (maxDimLimit && Math.max(natW, natH) > maxDimLimit) {
+                scale = Math.min(scale, maxDimLimit / Math.max(natW, natH));
+            }
+            if (maxPixelLimit && (natW * natH * scale * scale) > maxPixelLimit) {
+                scale = Math.min(scale, Math.sqrt(maxPixelLimit / (natW * natH)));
+            }
+            const outW = Math.max(1, Math.round(natW * scale));
+            const outH = Math.max(1, Math.round(natH * scale));
+            const c = document.createElement('canvas');
+            c.width = outW;
+            c.height = outH;
+            const ctx = c.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, outW, outH);
+            try {
+                const blob = await encodeCanvasToBlob(c, format, EXPORT_QUALITY, '#ffffff');
+                return { blob, width: outW, height: outH };
+            } finally {
+                c.width = 0;
+                c.height = 0;
+            }
+        };
+
+        try {
+            return await renderAtMaxDim(MAX_SAFE_DIM, MAX_SAFE_PIXELS);
+        } catch (err) {
+            // Fallback for mobile WebKit strict canvas memory caps
+            return await renderAtMaxDim(3200, 12000000);
+        }
+    };
+
+    const runBatchConversion = async () => {
+        if (isConverting || convertItems.length === 0) return;
+        const sessionId = convertSessionId;
+        const targets = convertItems.filter((it) => it.status === 'pending' || it.status === 'error');
+        if (targets.length === 0) return;
+
+        isConverting = true;
+        const total = targets.length;
+        let completed = 0;
+        let successCount = 0;
+        let failCount = 0;
+
+        const usedNames = new Set(
+            convertItems
+                .filter((it) => it.status === 'done' && it.outputFilename)
+                .map((it) => it.outputFilename.toLowerCase())
+        );
+
+        const updateProgressUi = (doneCount) => {
+            if (convertProgressLabel) convertProgressLabel.textContent = '変換中...';
+            if (convertProgressCount) convertProgressCount.textContent = `${doneCount} / ${total}`;
+            if (convertProgressBar) {
+                const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+                convertProgressBar.style.width = `${pct}%`;
+            }
+        };
+
+        updateProgressUi(0);
+        renderConvertView();
+
+        for (let i = 0; i < targets.length; i++) {
+            if (sessionId !== convertSessionId) return;
+            const item = targets[i];
+            item.status = 'converting';
+            item.errorMsg = '';
+            renderConvertView();
+            await new Promise((r) => setTimeout(r, 15));
+            if (sessionId !== convertSessionId) return;
+
+            try {
+                const img = await loadDecodedImageForFile(item.file);
+                if (sessionId !== convertSessionId) return;
+
+                if (!item.thumbUrl) {
+                    const thumbUrl = await createThumbUrlFromImage(img);
+                    if (sessionId !== convertSessionId) {
+                        if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+                        return;
+                    }
+                    if (thumbUrl) item.thumbUrl = thumbUrl;
+                }
+
+                const result = await encodePureImageToBlob(img, convertFormat);
+                if (sessionId !== convertSessionId) return;
+
+                if (item.outputUrl) URL.revokeObjectURL(item.outputUrl);
+                item.blob = result.blob;
+                item.outputUrl = URL.createObjectURL(result.blob);
+                item.outputSize = result.blob.size;
+                item.width = result.width;
+                item.height = result.height;
+                item.outputFilename = buildUniqueConvertFilename(item.file, i, convertFormat, usedNames);
+                item.status = 'done';
+                successCount++;
+            } catch (err) {
+                console.error(err);
+                item.status = 'error';
+                item.errorMsg = '読み込み失敗';
+                failCount++;
+            }
+
+            completed++;
+            updateProgressUi(completed);
+            renderConvertView();
+        }
+
+        if (sessionId !== convertSessionId) return;
+        isConverting = false;
+        renderConvertView();
+
+        if (successCount > 0 && failCount === 0) {
+            showToast('変換が完了しました');
+        } else if (successCount > 0 && failCount > 0) {
+            showToast(`${successCount}枚変換完了（${failCount}枚失敗）`);
+        } else {
+            showToast('画像を変換できませんでした');
+        }
+    };
+
+    if (btnConvertBack) {
+        btnConvertBack.addEventListener('click', () => {
+            if (isConverting) {
+                if (window.confirm('変換を中断して最初の画面に戻りますか？')) {
+                    resetApp();
+                }
+                return;
+            }
+            if (convertItems.length > 0) {
+                if (window.confirm('最初の画面に戻りますか？\n（選択中の画像や変換結果はリセットされます）')) {
+                    resetApp();
+                }
+            } else {
+                resetApp();
+            }
+        });
+    }
+
+    if (btnConvertAdd) {
+        btnConvertAdd.addEventListener('click', () => {
+            if (isConverting) return;
+            uploadTarget = 'convert-append';
+            imageUpload.click();
+        });
+    }
+
+    if (btnConvertEmptyPick) {
+        btnConvertEmptyPick.addEventListener('click', () => {
+            if (isConverting) return;
+            uploadTarget = 'convert-append';
+            imageUpload.click();
+        });
+    }
+
+    if (convertFormatPills) {
+        convertFormatPills.addEventListener('click', (e) => {
+            if (isConverting) return;
+            const pill = e.target.closest('.format-pill');
+            if (!pill || pill.disabled) return;
+            const nextFormat = pill.getAttribute('data-format');
+            if (!nextFormat || nextFormat === convertFormat) return;
+            convertFormat = nextFormat;
+            resetConvertOutputsToPending();
+            renderConvertView();
+        });
+    }
+
+    if (btnConvertStart) {
+        btnConvertStart.addEventListener('click', runBatchConversion);
+    }
+
+    if (btnConvertDownloadAll) {
+        btnConvertDownloadAll.addEventListener('click', () => {
+            const doneItems = convertItems.filter((it) => it.status === 'done' && it.blob);
+            if (doneItems.length === 0) return;
+            doneItems.forEach((item, idx) => {
+                setTimeout(() => {
+                    triggerBlobDownload(item.blob, item.outputFilename);
+                }, idx * 250);
+            });
+            showToast(doneItems.length === 1
+                ? 'ダウンロードしました'
+                : `${doneItems.length}枚をダウンロードしています`);
+        });
+    }
+
     // --- 誤ってWebサイトを閉じないようにする確認画面 (beforeunload) ---
     window.addEventListener('beforeunload', (event) => {
-        if (imageFiles && imageFiles.length > 0) {
+        if ((imageFiles && imageFiles.length > 0) || (convertItems && convertItems.length > 0)) {
             event.preventDefault();
             event.returnValue = '';
         }
@@ -2798,7 +3456,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             navigator.serviceWorker.addEventListener('controllerchange', () => {
                 if (!hadController || refreshing) return;
-                if (imageFiles.length === 0) {
+                if (imageFiles.length === 0 && convertItems.length === 0) {
                     refreshing = true;
                     try {
                         sessionStorage.setItem('pwa_just_updated', '1');
