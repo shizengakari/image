@@ -1,7 +1,7 @@
 // sw.js - Service Worker for Image Editor PWA
 // アップデートが即座に反映される「Network First（ネットワーク優先）」戦略
 
-const CACHE_NAME = 'image-editor-v1.0.8';
+const CACHE_NAME = 'image-editor-v1.0.9';
 
 const ASSETS_TO_CACHE = [
     './',

@@ -9,8 +9,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const uploadModeMenu = document.getElementById('upload-mode-menu');
     const btnTriggerUpload = document.getElementById('btn-trigger-upload');
     const uploadActionLabel = document.getElementById('upload-action-label');
-    const uploadActionHint = document.getElementById('upload-action-hint');
     const imageUpload = document.getElementById('image-upload');
+    const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    if (imageUpload && !isMobileDevice) {
+        imageUpload.setAttribute(
+            'accept',
+            'image/*,.cr3,.cr2,.crw,.dng,.raw,.nef,.nrw,.arw,.srf,.sr2,.orf,.ori,.rw2,.rwl,.raf,.pef,.ptx,.srw,.x3f,.3fr,.fff,.iiq,.erf,.mrw,.mdc,.mos,.kdc,.dcr,.mef,.pxn,.gpr,.bay,.cap,.eip,.drf,.r3d,.ari,.heic,.heif,.hif,.avif,.jxl,.tif,.tiff,.tga,.bmp,.ico,.cur,.svg,.svgz,.jfif,.pjpeg,.pjp,.apng,.jp2,.j2k,.jpf,.jpx,.psd,.psb,.ppm,.pgm,.pbm,.pnm,.xbm'
+        );
+    }
 
     // --- Convert View Elements ---
     const btnConvertBack = document.getElementById('btn-convert-back');
@@ -1861,10 +1867,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return promise;
     };
 
+    const RAW_EXT_REGEX = /\.(cr3|cr2|crw|dng|raw|nef|nrw|arw|srf|sr2|orf|ori|rw2|rwl|raf|pef|ptx|srw|x3f|3fr|fff|iiq|erf|mrw|mdc|mos|kdc|dcr|mef|pxn|gpr|bay|cap|eip|drf|r3d|ari)$/i;
+
     const isSupportedImageFile = (file) => {
         if (!file) return false;
         if (file.type && file.type.startsWith('image/')) return true;
-        return /\.(jpe?g|jfif|pjpeg|pjp|png|webp|gif|bmp|avif|svg|ico|heic|heif|hif|tif|tiff|dng|raw|cr2|cr3|nef|nrw|arw|srf|sr2|orf|rw2|raf|pef|srw|x3f|3fr|rwl|iiq)$/i.test(file.name || '');
+        const name = file.name || '';
+        if (RAW_EXT_REGEX.test(name)) return true;
+        return /\.(jpe?g|jfif|pjpeg|pjp|png|apng|webp|gif|bmp|avif|jxl|svg|svgz|ico|cur|heic|heif|hif|tif|tiff|tga|jp2|j2k|jpf|jpx|psd|psb|ppm|pgm|pbm|pnm|xbm)$/i.test(name);
     };
 
     const loadImageFromBlob = (blob) => {
@@ -1916,15 +1926,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (bytes[0] === 0x46 && bytes[1] === 0x55 && bytes[2] === 0x4A && bytes[3] === 0x49) {
             return 'raw';
         }
-        // TIFF / DNG / CR2 / NEF / ARW / ORF / RW2
-        if ((bytes[0] === 0x49 && bytes[1] === 0x49 && (bytes[2] === 0x2A || bytes[2] === 0x55)) ||
+        // Adobe PSD / PSB ('8BPS')
+        if (bytes[0] === 0x38 && bytes[1] === 0x42 && bytes[2] === 0x50 && bytes[3] === 0x53) {
+            return 'psd';
+        }
+        // Netpbm (P1..P6)
+        if (bytes[0] === 0x50 && bytes[1] >= 0x31 && bytes[1] <= 0x36 && (bytes[2] === 0x0A || bytes[2] === 0x0D || bytes[2] === 0x20 || bytes[2] === 0x09)) {
+            return 'pnm';
+        }
+        // TIFF / DNG / CR2 / NEF / ARW / ORF ('IIRO'/'IIRS') / RW2 ('IIU\0')
+        if ((bytes[0] === 0x49 && bytes[1] === 0x49 && (bytes[2] === 0x2A || bytes[2] === 0x55 || bytes[2] === 0x52)) ||
             (bytes[0] === 0x4D && bytes[1] === 0x4D && bytes[2] === 0x00 && bytes[3] === 0x2A)) {
             return 'tiff-or-raw';
         }
         return 'unknown';
     };
 
-    // Walk JPEG markers cleanly to extract embedded full-res JPEG previews from RAW/DNG/CR2/CR3/NEF/ARW/RAF
+    // Walk JPEG markers cleanly to extract embedded full-res JPEG previews from RAW/DNG/CR2/CR3/NEF/ARW/RAF/PSD
     const findJpegEndOffset = (bytes, start) => {
         let pos = start + 2;
         const len = bytes.length;
@@ -1959,10 +1977,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return -1;
     };
 
+    const isValidPostSoiMarker = (m) => (
+        (m >= 0xE0 && m <= 0xEF) || m === 0xDB || m === 0xC0 || m === 0xC1 ||
+        m === 0xC2 || m === 0xC4 || m === 0xDD || m === 0xFE
+    );
+
     const extractLargestEmbeddedJpeg = async (bytes) => {
         const candidates = [];
         for (let i = 0; i < bytes.length - 4; i++) {
-            if (bytes[i] === 0xFF && bytes[i + 1] === 0xD8 && bytes[i + 2] === 0xFF) {
+            if (bytes[i] === 0xFF && bytes[i + 1] === 0xD8 && bytes[i + 2] === 0xFF && isValidPostSoiMarker(bytes[i + 3])) {
                 const end = findJpegEndOffset(bytes, i);
                 if (end > i + 1024) {
                     candidates.push({ start: i, end, size: end - i });
@@ -1980,6 +2003,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return null;
     };
+
+    const canvasToPngBlob = (canvas) => new Promise((resolve, reject) => {
+        const cleanup = () => {
+            canvas.width = 0;
+            canvas.height = 0;
+        };
+        if (canvas.toBlob) {
+            canvas.toBlob((b) => {
+                cleanup();
+                if (b) resolve(b);
+                else reject(new Error('toBlob failed'));
+            }, 'image/png');
+        } else {
+            try {
+                const dataUrl = canvas.toDataURL('image/png');
+                cleanup();
+                const bstr = atob(dataUrl.split(',')[1]);
+                let n = bstr.length;
+                const u8 = new Uint8Array(n);
+                while (n--) u8[n] = bstr.charCodeAt(n);
+                resolve(new Blob([u8], { type: 'image/png' }));
+            } catch (e) {
+                cleanup();
+                reject(e);
+            }
+        }
+    });
 
     const decodeHeicBlob = async (file) => {
         if (typeof window.heic2any !== 'function') {
@@ -2012,13 +2062,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
         const ifds = window.UTIF.decode(buf);
         if (!ifds || ifds.length === 0) throw new Error('Empty TIFF');
-        // Pick largest IFD page
         let bestIfd = ifds[0];
         for (const ifd of ifds) {
-            window.UTIF.decodeImage(buf, ifd);
-            if ((ifd.width * ifd.height) > ((bestIfd.width || 0) * (bestIfd.height || 0))) {
-                bestIfd = ifd;
-            }
+            try {
+                window.UTIF.decodeImage(buf, ifd);
+                if ((ifd.width * ifd.height) > ((bestIfd.width || 0) * (bestIfd.height || 0))) {
+                    bestIfd = ifd;
+                }
+            } catch (_) {}
+        }
+        if (!bestIfd || !bestIfd.width || !bestIfd.height) {
+            throw new Error('Unsupported TIFF IFD');
         }
         const rgba = window.UTIF.toRGBA8(bestIfd);
         const c = document.createElement('canvas');
@@ -2027,9 +2081,189 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx = c.getContext('2d');
         const imgData = new ImageData(new Uint8ClampedArray(rgba), bestIfd.width, bestIfd.height);
         ctx.putImageData(imgData, 0, 0);
-        return new Promise((resolve, reject) => {
-            c.toBlob((b) => (b ? resolve(b) : reject(new Error('TIFF toBlob failed'))), 'image/png');
-        });
+        return canvasToPngBlob(c);
+    };
+
+    const decodeTgaBlob = async (bytes) => {
+        if (bytes.length < 18) throw new Error('Invalid TGA');
+        const idLen = bytes[0];
+        const colorMapType = bytes[1];
+        const imageType = bytes[2];
+        const cmLength = bytes[5] | (bytes[6] << 8);
+        const cmDepth = bytes[7];
+        const w = bytes[12] | (bytes[13] << 8);
+        const h = bytes[14] | (bytes[15] << 8);
+        const bpp = bytes[16];
+        const desc = bytes[17];
+        if (!w || !h || w > 16384 || h > 16384) throw new Error('Invalid TGA dimensions');
+        const isRle = (imageType === 10 || imageType === 11);
+        const isRgb = (imageType === 2 || imageType === 10);
+        const isGray = (imageType === 3 || imageType === 11);
+        if (!isRgb && !isGray) throw new Error('Unsupported TGA type');
+
+        const cmBytes = colorMapType === 1 ? cmLength * Math.ceil(cmDepth / 8) : 0;
+        let offset = 18 + idLen + cmBytes;
+        const bppBytes = Math.ceil(bpp / 8);
+        const totalPixels = w * h;
+        const rgba = new Uint8ClampedArray(totalPixels * 4);
+
+        const writePixel = (pxIdx, pOffset) => {
+            const topOrigin = (desc & 0x20) !== 0;
+            const x = pxIdx % w;
+            const yRaw = Math.floor(pxIdx / w);
+            const y = topOrigin ? yRaw : (h - 1 - yRaw);
+            const out = (y * w + x) * 4;
+            if (isGray) {
+                const g = bytes[pOffset];
+                rgba[out] = g;
+                rgba[out + 1] = g;
+                rgba[out + 2] = g;
+                rgba[out + 3] = 255;
+            } else if (bpp === 16) {
+                const v = bytes[pOffset] | (bytes[pOffset + 1] << 8);
+                rgba[out] = ((v >> 10) & 0x1F) * 255 / 31;
+                rgba[out + 1] = ((v >> 5) & 0x1F) * 255 / 31;
+                rgba[out + 2] = (v & 0x1F) * 255 / 31;
+                rgba[out + 3] = 255;
+            } else {
+                rgba[out] = bytes[pOffset + 2];
+                rgba[out + 1] = bytes[pOffset + 1];
+                rgba[out + 2] = bytes[pOffset];
+                rgba[out + 3] = (bpp === 32) ? bytes[pOffset + 3] : 255;
+            }
+        };
+
+        let px = 0;
+        if (!isRle) {
+            while (px < totalPixels && offset + bppBytes <= bytes.length) {
+                writePixel(px++, offset);
+                offset += bppBytes;
+            }
+        } else {
+            while (px < totalPixels && offset < bytes.length) {
+                const header = bytes[offset++];
+                const count = (header & 0x7F) + 1;
+                if (header & 0x80) {
+                    if (offset + bppBytes > bytes.length) break;
+                    for (let k = 0; k < count && px < totalPixels; k++) {
+                        writePixel(px++, offset);
+                    }
+                    offset += bppBytes;
+                } else {
+                    for (let k = 0; k < count && px < totalPixels && offset + bppBytes <= bytes.length; k++) {
+                        writePixel(px++, offset);
+                        offset += bppBytes;
+                    }
+                }
+            }
+        }
+
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.putImageData(new ImageData(rgba, w, h), 0, 0);
+        return canvasToPngBlob(c);
+    };
+
+    const decodePnmBlob = async (bytes) => {
+        let pos = 0;
+        const readToken = () => {
+            while (pos < bytes.length) {
+                const ch = bytes[pos];
+                if (ch === 0x23) { // '#' comment
+                    while (pos < bytes.length && bytes[pos] !== 0x0A) pos++;
+                } else if (ch === 0x20 || ch === 0x09 || ch === 0x0A || ch === 0x0D) {
+                    pos++;
+                } else {
+                    break;
+                }
+            }
+            const start = pos;
+            while (pos < bytes.length) {
+                const ch = bytes[pos];
+                if (ch === 0x20 || ch === 0x09 || ch === 0x0A || ch === 0x0D || ch === 0x23) break;
+                pos++;
+            }
+            return String.fromCharCode(...bytes.subarray(start, pos));
+        };
+
+        const magic = readToken();
+        if (!/^P[1-6]$/.test(magic)) throw new Error('Invalid PNM');
+        const w = parseInt(readToken(), 10);
+        const h = parseInt(readToken(), 10);
+        if (!w || !h || w > 16384 || h > 16384) throw new Error('Invalid PNM size');
+        const isBitmap = (magic === 'P1' || magic === 'P4');
+        const maxVal = isBitmap ? 1 : parseInt(readToken(), 10);
+        if (pos < bytes.length && (bytes[pos] === 0x20 || bytes[pos] === 0x09 || bytes[pos] === 0x0A || bytes[pos] === 0x0D)) {
+            pos++;
+        }
+
+        const rgba = new Uint8ClampedArray(w * h * 4);
+        const scale = maxVal > 0 ? (255 / maxVal) : 1;
+
+        if (magic === 'P6') {
+            const step = maxVal > 255 ? 2 : 1;
+            for (let i = 0; i < w * h && pos + step * 3 <= bytes.length; i++) {
+                const r = step === 2 ? ((bytes[pos] << 8) | bytes[pos + 1]) : bytes[pos];
+                const g = step === 2 ? ((bytes[pos + 2] << 8) | bytes[pos + 3]) : bytes[pos + 1];
+                const b = step === 2 ? ((bytes[pos + 4] << 8) | bytes[pos + 5]) : bytes[pos + 2];
+                pos += step * 3;
+                const out = i * 4;
+                rgba[out] = Math.round(r * scale);
+                rgba[out + 1] = Math.round(g * scale);
+                rgba[out + 2] = Math.round(b * scale);
+                rgba[out + 3] = 255;
+            }
+        } else if (magic === 'P5') {
+            const step = maxVal > 255 ? 2 : 1;
+            for (let i = 0; i < w * h && pos + step <= bytes.length; i++) {
+                const v = Math.round((step === 2 ? ((bytes[pos] << 8) | bytes[pos + 1]) : bytes[pos]) * scale);
+                pos += step;
+                const out = i * 4;
+                rgba[out] = v;
+                rgba[out + 1] = v;
+                rgba[out + 2] = v;
+                rgba[out + 3] = 255;
+            }
+        } else if (magic === 'P4') {
+            const rowBytes = Math.ceil(w / 8);
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const byteIdx = pos + y * rowBytes + (x >> 3);
+                    const bit = (bytes[byteIdx] >> (7 - (x & 7))) & 1;
+                    const v = bit ? 0 : 255;
+                    const out = (y * w + x) * 4;
+                    rgba[out] = v;
+                    rgba[out + 1] = v;
+                    rgba[out + 2] = v;
+                    rgba[out + 3] = 255;
+                }
+            }
+        } else {
+            for (let i = 0; i < w * h; i++) {
+                const out = i * 4;
+                if (magic === 'P3') {
+                    rgba[out] = Math.round((parseInt(readToken(), 10) || 0) * scale);
+                    rgba[out + 1] = Math.round((parseInt(readToken(), 10) || 0) * scale);
+                    rgba[out + 2] = Math.round((parseInt(readToken(), 10) || 0) * scale);
+                } else {
+                    const val = parseInt(readToken(), 10) || 0;
+                    const v = isBitmap ? (val ? 0 : 255) : Math.round(val * scale);
+                    rgba[out] = v;
+                    rgba[out + 1] = v;
+                    rgba[out + 2] = v;
+                }
+                rgba[out + 3] = 255;
+            }
+        }
+
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.putImageData(new ImageData(rgba, w, h), 0, 0);
+        return canvasToPngBlob(c);
     };
 
     const loadDecodedImageForFile = async (file, onStatus) => {
@@ -2038,9 +2272,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const name = (file.name || '').toLowerCase();
-        const isRawExt = /\.(dng|raw|cr2|cr3|nef|nrw|arw|srf|sr2|orf|rw2|raf|pef|srw|x3f|3fr|rwl|iiq)$/i.test(name);
+        const isRawExt = RAW_EXT_REGEX.test(name);
 
-        // 1. Try native browser decode first (handles JPEG, PNG, WebP, AVIF, GIF, BMP, SVG, and Safari HEIC/TIFF/DNG)
+        // 1. Try native browser decode first (handles JPEG, PNG, WebP, AVIF, GIF, BMP, SVG, and Safari HEIC/TIFF/DNG/CR3)
         try {
             const nativeImg = await loadImageFromBlob(file);
             // Guard against browsers that decode only a tiny EXIF thumbnail for large RAW files
@@ -2055,6 +2289,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const sniff = sniffFormatFromHeader(bytes);
         const isHeic = /\.(heic|heif|hif)$/i.test(name) || sniff === 'heic' || (file.type && /heic|heif/i.test(file.type));
         const isTiff = /\.(tif|tiff)$/i.test(name) || (file.type && /tiff/i.test(file.type));
+        const isTga = /\.tga$/i.test(name);
+        const isPnm = /\.(ppm|pgm|pbm|pnm)$/i.test(name) || sniff === 'pnm';
+        const isPsd = /\.(psd|psb)$/i.test(name) || sniff === 'psd';
 
         if (isHeic) {
             if (onStatus) onStatus('HEIC/HEIF画像を変換しています...');
@@ -2063,7 +2300,30 @@ document.addEventListener('DOMContentLoaded', () => {
             return await loadImageFromBlob(jpegBlob);
         }
 
-        if (isRawExt || sniff === 'raw' || sniff === 'tiff-or-raw') {
+        if (isTga) {
+            const pngBlob = await decodeTgaBlob(bytes);
+            decodedBlobCache.set(file, pngBlob);
+            return await loadImageFromBlob(pngBlob);
+        }
+
+        if (isPnm) {
+            const pngBlob = await decodePnmBlob(bytes);
+            decodedBlobCache.set(file, pngBlob);
+            return await loadImageFromBlob(pngBlob);
+        }
+
+        // Non-RAW TIFF files: decode full TIFF IFD first before falling back to embedded JPEG
+        if (isTiff && !isRawExt) {
+            if (onStatus) onStatus('TIFF画像を変換しています...');
+            try {
+                const pngBlob = await decodeTiffBlob(bytes);
+                decodedBlobCache.set(file, pngBlob);
+                return await loadImageFromBlob(pngBlob);
+            } catch (_) {}
+        }
+
+        // Camera RAW (CR3, CR2, NEF, ARW, DNG, RAF, ORF, RW2, etc.) and PSD embedded preview extraction
+        if (isRawExt || isPsd || sniff === 'raw' || sniff === 'tiff-or-raw') {
             if (onStatus) onStatus('カメラ画像を読み込んでいます...');
             const extracted = await extractLargestEmbeddedJpeg(bytes);
             if (extracted) {
@@ -2072,11 +2332,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        if (isTiff || sniff === 'tiff-or-raw') {
-            if (onStatus) onStatus('TIFF画像を変換しています...');
-            const pngBlob = await decodeTiffBlob(bytes);
-            decodedBlobCache.set(file, pngBlob);
-            return await loadImageFromBlob(pngBlob);
+        // Fallback: try TIFF/IFD decoder for uncompressed DNG/TIFF-RAW
+        if (isTiff || sniff === 'tiff-or-raw' || isRawExt) {
+            try {
+                if (onStatus) onStatus('TIFF画像を変換しています...');
+                const pngBlob = await decodeTiffBlob(bytes);
+                decodedBlobCache.set(file, pngBlob);
+                return await loadImageFromBlob(pngBlob);
+            } catch (_) {}
+        }
+
+        // Fallback: HDR PQ Canon CR3 or ISO-BMFF containers may carry HEVC preview
+        if (sniff === 'raw' || isRawExt) {
+            try {
+                const jpegBlob = await decodeHeicBlob(file);
+                decodedBlobCache.set(file, jpegBlob);
+                return await loadImageFromBlob(jpegBlob);
+            } catch (_) {}
         }
 
         throw new Error('Unsupported or corrupted image format');
@@ -2096,14 +2368,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btnTriggerUpload.classList.toggle('convert-mode', uploadMode === 'convert');
         }
         if (uploadActionLabel) {
-            uploadActionLabel.textContent = uploadMode === 'convert'
-                ? '変換する画像を選択'
-                : '編集する画像を選択';
-        }
-        if (uploadActionHint) {
-            uploadActionHint.textContent = uploadMode === 'convert'
-                ? '何枚でも選択OK（JPEG / PNG / WebP）'
-                : '複数枚選択OK・ドロップ対応';
+            uploadActionLabel.textContent = '画像を選択';
         }
     };
 
@@ -2978,9 +3243,9 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const item of itemsToThumb) {
             if (sessionId !== convertSessionId) return;
             if (item.thumbUrl) continue;
-            // Skip slow external decoders until conversion; quick-preview native formats immediately
+            // Skip heavy/RAW decoders until conversion; quick-preview native formats immediately
             const lower = item.name.toLowerCase();
-            const needsHeavyDecoder = /\.(heic|heif|hif|tif|tiff|dng|raw|cr2|cr3|nef|nrw|arw|srf|sr2|orf|rw2|raf|pef|srw|x3f|3fr|rwl|iiq)$/i.test(lower);
+            const needsHeavyDecoder = RAW_EXT_REGEX.test(lower) || /\.(heic|heif|hif|tif|tiff|tga|ppm|pgm|pbm|pnm|psd|psb)$/i.test(lower);
             if (needsHeavyDecoder) continue;
             try {
                 const img = await loadImageFromBlob(item.file);
@@ -3009,7 +3274,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formatLabel = (FORMAT_META[convertFormat] || FORMAT_META['image/jpeg']).label;
 
         if (convertHeaderPill) {
-            convertHeaderPill.textContent = totalCount > 0 ? `画像変換（${totalCount}枚）` : '画像変換';
+            convertHeaderPill.textContent = totalCount > 0 ? `${totalCount}枚` : '変換';
         }
         if (btnConvertAdd) {
             btnConvertAdd.disabled = isConverting;
@@ -3065,7 +3330,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const origText = document.createElement('span');
                     if (item.status === 'done') {
-                        origText.textContent = `${item.origExt} → ${formatLabel} • ${formatBytes(item.outputSize)}`;
+                        origText.textContent = `${formatLabel} • ${formatBytes(item.outputSize)}`;
                     } else if (item.origSize > 0) {
                         origText.textContent = `${item.origExt} • ${formatBytes(item.origSize)}`;
                     } else {
@@ -3081,12 +3346,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else if (item.status === 'done') {
                         const badge = document.createElement('span');
                         badge.className = 'convert-status-badge done';
-                        badge.textContent = '✓ 完了';
+                        badge.textContent = '✓';
                         metaEl.appendChild(badge);
                     } else if (item.status === 'error') {
                         const badge = document.createElement('span');
                         badge.className = 'convert-status-badge error';
-                        badge.textContent = item.errorMsg || '変換失敗';
+                        badge.textContent = '失敗';
                         metaEl.appendChild(badge);
                     }
 
@@ -3101,17 +3366,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         dlBtn.type = 'button';
                         dlBtn.className = 'convert-item-dl-btn';
                         dlBtn.setAttribute('aria-label', `${item.outputFilename} をダウンロード`);
+                        dlBtn.title = 'ダウンロード';
                         dlBtn.innerHTML = `
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                                 <polyline points="7 10 12 15 17 10"></polyline>
                                 <line x1="12" y1="15" x2="12" y2="3"></line>
                             </svg>
-                            <span>保存</span>
                         `;
                         dlBtn.addEventListener('click', () => {
                             triggerBlobDownload(item.blob, item.outputFilename);
-                            showToast('ダウンロードしました');
+                            showToast('保存しました');
                         });
                         actions.appendChild(dlBtn);
                     }
@@ -3149,9 +3414,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 convertSummaryBadge.textContent = '';
             } else if (pendingItems.length === 0 && doneItems.length > 0) {
                 const totalBytes = doneItems.reduce((acc, it) => acc + it.outputSize, 0);
-                convertSummaryBadge.textContent = doneItems.length === 1
-                    ? formatBytes(totalBytes)
-                    : `合計 ${formatBytes(totalBytes)}`;
+                convertSummaryBadge.textContent = formatBytes(totalBytes);
             } else {
                 convertSummaryBadge.textContent = `${totalCount}枚`;
             }
@@ -3164,9 +3427,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 btnConvertStart.style.display = 'none';
                 btnConvertDownloadAll.style.display = 'inline-flex';
                 if (btnConvertDownloadLabel) {
-                    btnConvertDownloadLabel.textContent = doneItems.length === 1
-                        ? 'ダウンロード'
-                        : `すべてダウンロード（${doneItems.length}枚）`;
+                    btnConvertDownloadLabel.textContent = 'ダウンロード';
                 }
             } else {
                 btnConvertDownloadAll.style.display = 'none';
@@ -3174,14 +3435,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const hasRetryable = convertItems.some((it) => it.status === 'pending' || it.status === 'error');
                 btnConvertStart.disabled = isConverting || totalCount === 0 || !hasRetryable;
                 if (btnConvertStartLabel) {
-                    const targetCount = convertItems.filter((it) => it.status === 'pending' || it.status === 'error').length;
-                    if (isConverting) {
-                        btnConvertStartLabel.textContent = '変換しています...';
-                    } else if (targetCount > 1) {
-                        btnConvertStartLabel.textContent = `${targetCount}枚を${formatLabel}に変換する`;
-                    } else {
-                        btnConvertStartLabel.textContent = `${formatLabel}に変換する`;
-                    }
+                    btnConvertStartLabel.textContent = isConverting ? '変換中...' : '変換';
                 }
             }
         }
