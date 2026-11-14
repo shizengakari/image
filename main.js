@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const convertHeaderPill = document.getElementById('convert-header-pill');
     const btnConvertAdd = document.getElementById('btn-convert-add');
     const convertBody = document.getElementById('convert-body');
+    const convertResultSummary = document.getElementById('convert-result-summary');
     const convertList = document.getElementById('convert-list');
     const convertEmptyState = document.getElementById('convert-empty-state');
     const btnConvertEmptyPick = document.getElementById('btn-convert-empty-pick');
@@ -431,7 +432,6 @@ document.addEventListener('DOMContentLoaded', () => {
         convertSessionId++;
         isConverting = false;
         convertItems.forEach((item) => {
-            if (item.thumbUrl) URL.revokeObjectURL(item.thumbUrl);
             if (item.outputUrl) URL.revokeObjectURL(item.outputUrl);
         });
         convertItems = [];
@@ -2821,14 +2821,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const isSingle = encodedOutputs.length === 1;
         if (completeTitlePill) {
-            completeTitlePill.textContent = isSingle ? '編集完了' : `${encodedOutputs.length}枚 編集完了`;
+            completeTitlePill.textContent = isSingle ? '完了' : `${encodedOutputs.length}枚`;
         }
         if (btnDownloadAllLabel) {
             btnDownloadAllLabel.textContent = isSingle ? '保存' : 'すべて保存';
         }
 
-        const totalSizeText = isSingle ? formatBytes(totalBytes) : `合計 ${formatBytes(totalBytes)}`;
-        if (exportTotalSize) exportTotalSize.textContent = totalSizeText;
+        if (exportTotalSize) exportTotalSize.textContent = formatBytes(totalBytes);
 
         if (isSingle && encodedOutputs[0]) {
             const out = encodedOutputs[0];
@@ -3157,64 +3156,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Pure Batch Format Conversion Flow ---
-    const getOriginalFormatLabel = (file) => {
-        const name = (file && file.name) ? file.name : '';
-        const extMatch = name.match(/\.([^.]+)$/);
-        if (extMatch && extMatch[1]) {
-            return extMatch[1].toUpperCase();
-        }
-        if (file && file.type && file.type.includes('/')) {
-            return file.type.split('/')[1].toUpperCase();
-        }
-        return 'IMG';
-    };
-
-    const createThumbUrlFromImage = (img, maxDim = 140) => {
-        return new Promise((resolve) => {
-            try {
-                const maxSide = Math.max(img.naturalWidth, img.naturalHeight);
-                const scale = maxSide > maxDim ? (maxDim / maxSide) : 1;
-                const tw = Math.max(1, Math.round(img.naturalWidth * scale));
-                const th = Math.max(1, Math.round(img.naturalHeight * scale));
-                const tc = document.createElement('canvas');
-                tc.width = tw;
-                tc.height = th;
-                const tctx = tc.getContext('2d');
-                tctx.fillStyle = '#ffffff';
-                tctx.fillRect(0, 0, tw, th);
-                tctx.imageSmoothingEnabled = true;
-                tctx.imageSmoothingQuality = 'high';
-                tctx.drawImage(img, 0, 0, tw, th);
-
-                const finish = (blob) => {
-                    tc.width = 0;
-                    tc.height = 0;
-                    resolve(blob ? URL.createObjectURL(blob) : null);
-                };
-
-                if (tc.toBlob) {
-                    tc.toBlob((blob) => finish(blob), 'image/jpeg', 0.8);
-                } else {
-                    const dataUrl = tc.toDataURL('image/jpeg', 0.8);
-                    const bstr = atob(dataUrl.split(',')[1]);
-                    let n = bstr.length;
-                    const u8arr = new Uint8Array(n);
-                    while (n--) u8arr[n] = bstr.charCodeAt(n);
-                    finish(new Blob([u8arr], { type: 'image/jpeg' }));
-                }
-            } catch (_) {
-                resolve(null);
-            }
-        });
-    };
+    const convertRowMap = new Map();
 
     const buildConvertItem = (file) => ({
         id: convertNextId++,
         file,
         name: (file && file.name) ? file.name : `image_${convertNextId}`,
-        origExt: getOriginalFormatLabel(file),
         origSize: (file && typeof file.size === 'number') ? file.size : 0,
-        thumbUrl: null,
         status: 'pending', // 'pending' | 'converting' | 'done' | 'error'
         blob: null,
         outputUrl: null,
@@ -3239,39 +3187,115 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    const generateInitialThumbsForConvert = async (itemsToThumb, sessionId) => {
-        for (const item of itemsToThumb) {
-            if (sessionId !== convertSessionId) return;
-            if (item.thumbUrl) continue;
-            // Skip heavy/RAW decoders until conversion; quick-preview native formats immediately
-            const lower = item.name.toLowerCase();
-            const needsHeavyDecoder = RAW_EXT_REGEX.test(lower) || /\.(heic|heif|hif|tif|tiff|tga|ppm|pgm|pbm|pnm|psd|psb)$/i.test(lower);
-            if (needsHeavyDecoder) continue;
-            try {
-                const img = await loadImageFromBlob(item.file);
-                if (sessionId !== convertSessionId) return;
-                item.width = img.naturalWidth;
-                item.height = img.naturalHeight;
-                const url = await createThumbUrlFromImage(img);
-                if (sessionId !== convertSessionId) {
-                    if (url) URL.revokeObjectURL(url);
-                    return;
-                }
-                if (url) {
-                    item.thumbUrl = url;
-                    renderConvertView();
-                }
-            } catch (_) {}
-            await new Promise((r) => setTimeout(r, 4));
+    const updateConvertRow = (row, item) => {
+        row.className = `convert-item status-${item.status}`;
+        const stateEl = row._stateEl;
+        const nameEl = row._nameEl;
+        const sizeEl = row._sizeEl;
+        const actionBtn = row._actionBtn;
+
+        if (item.status === 'converting') {
+            stateEl.innerHTML = '<span class="convert-mini-spinner"></span>';
+        } else if (item.status === 'done') {
+            stateEl.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+            `;
+        } else if (item.status === 'error') {
+            stateEl.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+            `;
+        } else {
+            stateEl.innerHTML = '<span class="convert-dot"></span>';
+        }
+
+        nameEl.textContent = (item.status === 'done' && item.outputFilename)
+            ? item.outputFilename
+            : item.name;
+
+        if (item.status === 'error') {
+            sizeEl.textContent = '失敗';
+        } else if (item.status === 'done') {
+            sizeEl.textContent = formatBytes(item.outputSize);
+        } else {
+            sizeEl.textContent = item.origSize > 0 ? formatBytes(item.origSize) : '';
+        }
+
+        if (item.status === 'done' && item.blob) {
+            actionBtn.className = 'convert-item-action-btn is-download';
+            actionBtn.disabled = isConverting;
+            actionBtn.setAttribute('aria-label', `${item.outputFilename} をダウンロード`);
+            actionBtn.title = 'ダウンロード';
+            actionBtn.innerHTML = `
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+            `;
+        } else {
+            actionBtn.className = 'convert-item-action-btn';
+            actionBtn.disabled = isConverting;
+            actionBtn.setAttribute('aria-label', `${item.name} を削除`);
+            actionBtn.title = '削除';
+            actionBtn.innerHTML = `
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            `;
         }
     };
 
-    const renderConvertView = () => {
+    const createConvertRow = (item) => {
+        const row = document.createElement('div');
+        const stateEl = document.createElement('span');
+        stateEl.className = 'convert-item-state';
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'convert-item-name';
+
+        const sizeEl = document.createElement('span');
+        sizeEl.className = 'convert-item-size';
+
+        const actionBtn = document.createElement('button');
+        actionBtn.type = 'button';
+        actionBtn.addEventListener('click', () => {
+            if (item.status === 'done' && item.blob) {
+                triggerBlobDownload(item.blob, item.outputFilename);
+                showToast('保存しました');
+                return;
+            }
+            if (isConverting) return;
+            if (item.outputUrl) URL.revokeObjectURL(item.outputUrl);
+            convertItems = convertItems.filter((it) => it.id !== item.id);
+            renderConvertView();
+        });
+
+        row._stateEl = stateEl;
+        row._nameEl = nameEl;
+        row._sizeEl = sizeEl;
+        row._actionBtn = actionBtn;
+
+        row.appendChild(stateEl);
+        row.appendChild(nameEl);
+        row.appendChild(sizeEl);
+        row.appendChild(actionBtn);
+        updateConvertRow(row, item);
+        return row;
+    };
+
+    const renderConvertSummaryAndControls = () => {
         if (!convertView) return;
         const totalCount = convertItems.length;
         const doneItems = convertItems.filter((it) => it.status === 'done');
+        const errorItems = convertItems.filter((it) => it.status === 'error');
         const pendingItems = convertItems.filter((it) => it.status === 'pending' || it.status === 'converting');
-        const formatLabel = (FORMAT_META[convertFormat] || FORMAT_META['image/jpeg']).label;
 
         if (convertHeaderPill) {
             convertHeaderPill.textContent = totalCount > 0 ? `${totalCount}枚` : '変換';
@@ -3291,121 +3315,39 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        if (convertEmptyState && convertList) {
-            if (totalCount === 0) {
-                convertEmptyState.style.display = 'flex';
-                convertList.style.display = 'none';
-                convertList.innerHTML = '';
+        if (convertResultSummary) {
+            const showResultSummary = !isConverting && totalCount > 0 && pendingItems.length === 0 && (doneItems.length > 0 || errorItems.length > 0);
+            if (!showResultSummary) {
+                convertResultSummary.style.display = 'none';
+                convertResultSummary.innerHTML = '';
             } else {
-                convertEmptyState.style.display = 'none';
-                convertList.style.display = 'flex';
-                convertList.innerHTML = '';
-
-                convertItems.forEach((item) => {
-                    const row = document.createElement('div');
-                    row.className = `convert-item status-${item.status}`;
-
-                    const thumb = document.createElement('div');
-                    thumb.className = 'convert-item-thumb';
-                    if (item.thumbUrl) {
-                        const imgEl = document.createElement('img');
-                        imgEl.src = item.thumbUrl;
-                        imgEl.alt = item.name;
-                        thumb.appendChild(imgEl);
-                    } else {
-                        thumb.textContent = item.origExt.slice(0, 4);
-                    }
-
-                    const info = document.createElement('div');
-                    info.className = 'convert-item-info';
-
-                    const nameEl = document.createElement('div');
-                    nameEl.className = 'convert-item-name';
-                    nameEl.textContent = item.status === 'done' && item.outputFilename
-                        ? item.outputFilename
-                        : item.name;
-
-                    const metaEl = document.createElement('div');
-                    metaEl.className = 'convert-item-meta';
-
-                    const origText = document.createElement('span');
-                    if (item.status === 'done') {
-                        origText.textContent = `${formatLabel} • ${formatBytes(item.outputSize)}`;
-                    } else if (item.origSize > 0) {
-                        origText.textContent = `${item.origExt} • ${formatBytes(item.origSize)}`;
-                    } else {
-                        origText.textContent = item.origExt;
-                    }
-                    metaEl.appendChild(origText);
-
-                    if (item.status === 'converting') {
-                        const badge = document.createElement('span');
-                        badge.className = 'convert-status-badge converting';
-                        badge.textContent = '変換中';
-                        metaEl.appendChild(badge);
-                    } else if (item.status === 'done') {
-                        const badge = document.createElement('span');
-                        badge.className = 'convert-status-badge done';
-                        badge.textContent = '✓';
-                        metaEl.appendChild(badge);
-                    } else if (item.status === 'error') {
-                        const badge = document.createElement('span');
-                        badge.className = 'convert-status-badge error';
-                        badge.textContent = '失敗';
-                        metaEl.appendChild(badge);
-                    }
-
-                    info.appendChild(nameEl);
-                    info.appendChild(metaEl);
-
-                    const actions = document.createElement('div');
-                    actions.className = 'convert-item-actions';
-
-                    if (item.status === 'done' && item.blob) {
-                        const dlBtn = document.createElement('button');
-                        dlBtn.type = 'button';
-                        dlBtn.className = 'convert-item-dl-btn';
-                        dlBtn.setAttribute('aria-label', `${item.outputFilename} をダウンロード`);
-                        dlBtn.title = 'ダウンロード';
-                        dlBtn.innerHTML = `
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                const totalOutBytes = doneItems.reduce((acc, it) => acc + it.outputSize, 0);
+                convertResultSummary.style.display = 'flex';
+                if (errorItems.length > 0) {
+                    convertResultSummary.className = 'convert-result-summary has-errors';
+                    convertResultSummary.innerHTML = `
+                        <span class="convert-summary-left">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="9"></circle>
+                                <line x1="12" y1="8" x2="12" y2="12"></line>
+                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
                             </svg>
-                        `;
-                        dlBtn.addEventListener('click', () => {
-                            triggerBlobDownload(item.blob, item.outputFilename);
-                            showToast('保存しました');
-                        });
-                        actions.appendChild(dlBtn);
-                    }
-
-                    const removeBtn = document.createElement('button');
-                    removeBtn.type = 'button';
-                    removeBtn.className = 'convert-item-remove-btn';
-                    removeBtn.disabled = isConverting;
-                    removeBtn.setAttribute('aria-label', `${item.name} を削除`);
-                    removeBtn.innerHTML = `
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
+                            <span>${doneItems.length} / ${totalCount} 完了</span>
+                        </span>
+                        <span class="convert-summary-right">${errorItems.length}枚 失敗</span>
                     `;
-                    removeBtn.addEventListener('click', () => {
-                        if (isConverting) return;
-                        if (item.thumbUrl) URL.revokeObjectURL(item.thumbUrl);
-                        if (item.outputUrl) URL.revokeObjectURL(item.outputUrl);
-                        convertItems = convertItems.filter((it) => it.id !== item.id);
-                        renderConvertView();
-                    });
-                    actions.appendChild(removeBtn);
-
-                    row.appendChild(thumb);
-                    row.appendChild(info);
-                    row.appendChild(actions);
-                    convertList.appendChild(row);
-                });
+                } else {
+                    convertResultSummary.className = 'convert-result-summary is-success';
+                    convertResultSummary.innerHTML = `
+                        <span class="convert-summary-left">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                            <span>${doneItems.length}枚 完了</span>
+                        </span>
+                        <span class="convert-summary-right">${formatBytes(totalOutBytes)}</span>
+                    `;
+                }
             }
         }
 
@@ -3413,10 +3355,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (totalCount === 0) {
                 convertSummaryBadge.textContent = '';
             } else if (pendingItems.length === 0 && doneItems.length > 0) {
-                const totalBytes = doneItems.reduce((acc, it) => acc + it.outputSize, 0);
-                convertSummaryBadge.textContent = formatBytes(totalBytes);
+                const totalOutBytes = doneItems.reduce((acc, it) => acc + it.outputSize, 0);
+                convertSummaryBadge.textContent = formatBytes(totalOutBytes);
             } else {
-                convertSummaryBadge.textContent = `${totalCount}枚`;
+                const totalOrigBytes = convertItems.reduce((acc, it) => acc + (it.origSize || 0), 0);
+                convertSummaryBadge.textContent = totalOrigBytes > 0 ? formatBytes(totalOrigBytes) : '';
             }
         }
 
@@ -3435,7 +3378,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const hasRetryable = convertItems.some((it) => it.status === 'pending' || it.status === 'error');
                 btnConvertStart.disabled = isConverting || totalCount === 0 || !hasRetryable;
                 if (btnConvertStartLabel) {
-                    btnConvertStartLabel.textContent = isConverting ? '変換中...' : '変換';
+                    btnConvertStartLabel.textContent = isConverting ? '変換中' : '変換';
                 }
             }
         }
@@ -3445,6 +3388,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const renderConvertView = () => {
+        if (!convertView) return;
+        const totalCount = convertItems.length;
+
+        if (convertEmptyState && convertList) {
+            convertRowMap.clear();
+            if (totalCount === 0) {
+                convertEmptyState.style.display = 'flex';
+                convertList.style.display = 'none';
+                convertList.innerHTML = '';
+            } else {
+                convertEmptyState.style.display = 'none';
+                convertList.style.display = 'flex';
+                convertList.innerHTML = '';
+
+                const orderedItems = (!isConverting && convertItems.some((it) => it.status === 'error'))
+                    ? [
+                        ...convertItems.filter((it) => it.status === 'error'),
+                        ...convertItems.filter((it) => it.status !== 'error')
+                    ]
+                    : convertItems;
+
+                const frag = document.createDocumentFragment();
+                orderedItems.forEach((item) => {
+                    const row = createConvertRow(item);
+                    convertRowMap.set(item.id, row);
+                    frag.appendChild(row);
+                });
+                convertList.appendChild(frag);
+            }
+        }
+
+        renderConvertSummaryAndControls();
+    };
+
     const startConvertFlow = (fileList) => {
         const validFiles = Array.from(fileList).filter(isSupportedImageFile);
         if (validFiles.length === 0) {
@@ -3452,12 +3430,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         clearConvertItems();
-        const sessionId = convertSessionId;
         convertItems = validFiles.map(buildConvertItem);
         showView(convertView);
         if (convertBody) convertBody.scrollTop = 0;
         renderConvertView();
-        generateInitialThumbsForConvert(convertItems, sessionId);
     };
 
     const appendFilesToConvert = (fileList) => {
@@ -3470,11 +3446,9 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('対応している画像が見つかりませんでした');
             return;
         }
-        const sessionId = convertSessionId;
         const added = validFiles.map(buildConvertItem);
         convertItems = convertItems.concat(added);
         renderConvertView();
-        generateInitialThumbsForConvert(added, sessionId);
         showToast(`${added.length}枚を追加しました`);
     };
 
@@ -3551,7 +3525,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
 
         const updateProgressUi = (doneCount) => {
-            if (convertProgressLabel) convertProgressLabel.textContent = '変換中...';
+            if (convertProgressLabel) convertProgressLabel.textContent = '変換中';
             if (convertProgressCount) convertProgressCount.textContent = `${doneCount} / ${total}`;
             if (convertProgressBar) {
                 const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
@@ -3567,22 +3541,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = targets[i];
             item.status = 'converting';
             item.errorMsg = '';
-            renderConvertView();
-            await new Promise((r) => setTimeout(r, 15));
+            const rowEl = convertRowMap.get(item.id);
+            if (rowEl) updateConvertRow(rowEl, item);
+            await new Promise((r) => setTimeout(r, 8));
             if (sessionId !== convertSessionId) return;
 
             try {
                 const img = await loadDecodedImageForFile(item.file);
                 if (sessionId !== convertSessionId) return;
-
-                if (!item.thumbUrl) {
-                    const thumbUrl = await createThumbUrlFromImage(img);
-                    if (sessionId !== convertSessionId) {
-                        if (thumbUrl) URL.revokeObjectURL(thumbUrl);
-                        return;
-                    }
-                    if (thumbUrl) item.thumbUrl = thumbUrl;
-                }
 
                 const result = await encodePureImageToBlob(img, convertFormat);
                 if (sessionId !== convertSessionId) return;
@@ -3599,25 +3565,27 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {
                 console.error(err);
                 item.status = 'error';
-                item.errorMsg = '読み込み失敗';
+                item.errorMsg = '失敗';
                 failCount++;
             }
 
             completed++;
             updateProgressUi(completed);
-            renderConvertView();
+            if (rowEl) updateConvertRow(rowEl, item);
+            renderConvertSummaryAndControls();
         }
 
         if (sessionId !== convertSessionId) return;
         isConverting = false;
         renderConvertView();
+        if (convertBody) convertBody.scrollTop = 0;
 
         if (successCount > 0 && failCount === 0) {
             showToast('変換が完了しました');
         } else if (successCount > 0 && failCount > 0) {
-            showToast(`${successCount}枚変換完了（${failCount}枚失敗）`);
+            showToast(`${successCount}枚完了・${failCount}枚失敗`);
         } else {
-            showToast('画像を変換できませんでした');
+            showToast('変換できませんでした');
         }
     };
 

@@ -517,7 +517,7 @@
                         <polyline points="12 19 5 12 12 5"></polyline>
                     </svg>
                 </button>
-                <div class="progress-pill" id="complete-title-pill">編集完了</div>
+                <div class="progress-pill" id="complete-title-pill">完了</div>
                 <button type="button" class="btn icon-btn" id="btn-restart-top" aria-label="新しく選ぶ" title="別の画像を選ぶ">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -583,6 +583,7 @@
             </div>
 
             <div class="convert-body" id="convert-body">
+                <div id="convert-result-summary" class="convert-result-summary" style="display: none;"></div>
                 <div id="convert-list" class="convert-list"></div>
 
                 <div id="convert-empty-state" class="convert-empty-state" style="display: none;">
@@ -602,7 +603,6 @@
                 </div>
 
                 <div class="export-row">
-                    <span class="export-label">形式</span>
                     <div class="format-pills" id="convert-format-pills">
                         <button type="button" class="format-pill active" data-format="image/jpeg">JPEG</button>
                         <button type="button" class="format-pill" data-format="image/png">PNG</button>
