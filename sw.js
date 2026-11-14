@@ -1,7 +1,7 @@
 // sw.js - Service Worker for Image Editor PWA
 // アップデートが即座に反映される「Network First（ネットワーク優先）」戦略
 
-const CACHE_NAME = 'image-editor-v1.0.10';
+const CACHE_NAME = 'image-editor-v1.1.0';
 
 const ASSETS_TO_CACHE = [
     './',
@@ -48,15 +48,35 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// フェッチ処理：Network First（ネットワーク優先）
-// 通信できる場合は常に最新のサーバーファイルを取得し、キャッシュも更新。
-// オフライン時のみキャッシュを使用。これによりWeb更新が確実に即時反映されます。
+// フェッチ処理：バージョン固定のCDNデコーダはCache First、アプリ本体はNetwork First
 self.addEventListener('fetch', (event) => {
     // GET リクエストのみ対象
     if (event.request.method !== 'GET') return;
 
     const url = new URL(event.request.url);
     const isSameOrigin = url.origin === self.location.origin;
+
+    // バージョン固定の外部デコーダライブラリ（libheif-js / heic-to / utif / ag-psd 等）はキャッシュ優先で即座に返す
+    if (!isSameOrigin && /^https:\/\/(cdn\.jsdelivr\.net|unpkg\.com)\/npm\/[^@]+@\d/i.test(url.href)) {
+        event.respondWith(
+            caches.match(event.request).then((cachedResponse) => {
+                if (cachedResponse) {
+                    return cachedResponse;
+                }
+                return fetch(event.request).then((networkResponse) => {
+                    if (networkResponse && networkResponse.status === 200) {
+                        const responseClone = networkResponse.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(event.request, responseClone);
+                        });
+                    }
+                    return networkResponse;
+                });
+            })
+        );
+        return;
+    }
+
     const fetchRequest = (isSameOrigin && (event.request.mode === 'navigate' || /\.(html|css|js|json)$/i.test(url.pathname)))
         ? new Request(event.request, { cache: 'no-cache' })
         : event.request;

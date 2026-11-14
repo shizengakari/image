@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (imageUpload && !isMobileDevice) {
         imageUpload.setAttribute(
             'accept',
-            'image/*,.cr3,.cr2,.crw,.dng,.raw,.nef,.nrw,.arw,.srf,.sr2,.orf,.ori,.rw2,.rwl,.raf,.pef,.ptx,.srw,.x3f,.3fr,.fff,.iiq,.erf,.mrw,.mdc,.mos,.kdc,.dcr,.mef,.pxn,.gpr,.bay,.cap,.eip,.drf,.r3d,.ari,.heic,.heif,.hif,.avif,.jxl,.tif,.tiff,.tga,.bmp,.ico,.cur,.svg,.svgz,.jfif,.pjpeg,.pjp,.apng,.jp2,.j2k,.jpf,.jpx,.psd,.psb,.ppm,.pgm,.pbm,.pnm,.xbm'
+            'image/*,.cr3,.cr2,.crw,.dng,.raw,.nef,.nrw,.arw,.srf,.sr2,.orf,.ori,.rw2,.rwl,.raf,.pef,.ptx,.srw,.x3f,.3fr,.fff,.iiq,.erf,.mrw,.mdc,.mos,.kdc,.dcr,.mef,.pxn,.gpr,.bay,.cap,.eip,.drf,.r3d,.ari,.heic,.heif,.hif,.heics,.avci,.avif,.jxl,.tif,.tiff,.tga,.bmp,.dib,.rle,.ico,.cur,.svg,.svgz,.jfif,.pjpeg,.pjp,.apng,.jp2,.j2k,.jpf,.jpx,.psd,.psb,.ppm,.pgm,.pbm,.pnm,.xbm,.qoi'
         );
     }
 
@@ -1868,13 +1868,27 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const RAW_EXT_REGEX = /\.(cr3|cr2|crw|dng|raw|nef|nrw|arw|srf|sr2|orf|ori|rw2|rwl|raf|pef|ptx|srw|x3f|3fr|fff|iiq|erf|mrw|mdc|mos|kdc|dcr|mef|pxn|gpr|bay|cap|eip|drf|r3d|ari)$/i;
+    const HEIC_EXT_REGEX = /\.(heic|heif|hif|heics|avci)$/i;
+    const NON_IMAGE_EXT_REGEX = /\.(mp4|mov|m4v|avi|mkv|webm|wmv|flv|mp3|wav|m4a|aac|flac|ogg|pdf|txt|md|csv|json|xml|html?|js|css|zip|rar|7z|tar|gz|docx?|xlsx?|pptx?|exe|dmg|apk)$/i;
 
     const isSupportedImageFile = (file) => {
         if (!file) return false;
-        if (file.type && file.type.startsWith('image/')) return true;
+        const mime = (file.type || '').toLowerCase();
+        if (mime.startsWith('image/')) return true;
+        if (mime.startsWith('video/') || mime.startsWith('audio/') || mime.startsWith('text/') || mime === 'application/pdf') {
+            return false;
+        }
         const name = file.name || '';
+        if (NON_IMAGE_EXT_REGEX.test(name)) return false;
         if (RAW_EXT_REGEX.test(name)) return true;
-        return /\.(jpe?g|jfif|pjpeg|pjp|png|apng|webp|gif|bmp|avif|jxl|svg|svgz|ico|cur|heic|heif|hif|tif|tiff|tga|jp2|j2k|jpf|jpx|psd|psb|ppm|pgm|pbm|pnm|xbm)$/i.test(name);
+        if (/\.(jpe?g|jfif|pjpeg|pjp|png|apng|webp|gif|bmp|dib|rle|avif|jxl|svg|svgz|ico|cur|heic|heif|hif|heics|avci|tif|tiff|tga|jp2|j2k|jpf|jpx|psd|psb|ppm|pgm|pbm|pnm|xbm|qoi)$/i.test(name)) {
+            return true;
+        }
+        // Accept extensionless files or generic binary blobs (common from mobile share sheets)
+        if (!/\.[^./\\]+$/.test(name) || mime === 'application/octet-stream') {
+            return true;
+        }
+        return false;
     };
 
     const loadImageFromBlob = (blob) => {
@@ -1912,15 +1926,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    const sniffFormatFromHeader = (bytes) => {
-        if (bytes.length < 12) return 'unknown';
-        // ISO-BMFF (HEIC / HEIF / AVIF / CR3)
-        if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
-            const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]).toLowerCase();
-            if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1', 'heim', 'heis', 'hevm', 'hevs'].includes(brand)) {
-                return 'heic';
+    const tryCreateImageBitmap = async (source) => {
+        if (typeof createImageBitmap !== 'function') return null;
+        try {
+            const bmp = await createImageBitmap(source);
+            if (bmp && bmp.width > 0 && bmp.height > 0) {
+                return bmp;
             }
-            if (brand === 'crx ') return 'raw';
+            if (bmp && typeof bmp.close === 'function') bmp.close();
+        } catch (_) {}
+        return null;
+    };
+
+    const sniffFormatFromHeader = (bytes) => {
+        if (bytes.length < 4) return 'unknown';
+        // QOI ('qoif')
+        if (bytes[0] === 0x71 && bytes[1] === 0x6F && bytes[2] === 0x69 && bytes[3] === 0x66) {
+            return 'qoi';
+        }
+        // JPEG XL codestream or ISO container
+        if ((bytes[0] === 0xFF && bytes[1] === 0x0A) ||
+            (bytes.length >= 12 && bytes[0] === 0x00 && bytes[1] === 0x00 && bytes[2] === 0x00 && bytes[3] === 0x0C &&
+             bytes[4] === 0x4A && bytes[5] === 0x58 && bytes[6] === 0x4C && bytes[7] === 0x20)) {
+            return 'jxl';
         }
         // Fujifilm RAF
         if (bytes[0] === 0x46 && bytes[1] === 0x55 && bytes[2] === 0x4A && bytes[3] === 0x49) {
@@ -1934,15 +1962,28 @@ document.addEventListener('DOMContentLoaded', () => {
         if (bytes[0] === 0x50 && bytes[1] >= 0x31 && bytes[1] <= 0x36 && (bytes[2] === 0x0A || bytes[2] === 0x0D || bytes[2] === 0x20 || bytes[2] === 0x09)) {
             return 'pnm';
         }
+        // XBM ('#define')
+        if (bytes.length >= 7 && bytes[0] === 0x23 && bytes[1] === 0x64 && bytes[2] === 0x65 && bytes[3] === 0x66) {
+            return 'xbm';
+        }
         // TIFF / DNG / CR2 / NEF / ARW / ORF ('IIRO'/'IIRS') / RW2 ('IIU\0')
         if ((bytes[0] === 0x49 && bytes[1] === 0x49 && (bytes[2] === 0x2A || bytes[2] === 0x55 || bytes[2] === 0x52)) ||
             (bytes[0] === 0x4D && bytes[1] === 0x4D && bytes[2] === 0x00 && bytes[3] === 0x2A)) {
             return 'tiff-or-raw';
         }
+        if (bytes.length < 12) return 'unknown';
+        // ISO-BMFF (HEIC / HEIF / AVIF / CR3)
+        if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+            const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]).toLowerCase();
+            if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1', 'heim', 'heis', 'hevm', 'hevs', 'avci', 'avcs'].includes(brand)) {
+                return 'heic';
+            }
+            if (brand === 'crx ') return 'raw';
+        }
         return 'unknown';
     };
 
-    // Walk JPEG markers cleanly to extract embedded full-res JPEG previews from RAW/DNG/CR2/CR3/NEF/ARW/RAF/PSD
+    // Walk JPEG markers cleanly using native Uint8Array.indexOf for maximum speed on large RAW files
     const findJpegEndOffset = (bytes, start) => {
         let pos = start + 2;
         const len = bytes.length;
@@ -1961,16 +2002,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (segLen < 2 || pos + segLen > len) return -1;
             pos += segLen;
 
-            if (marker === 0xDA) { // SOS: scan entropy-coded data until non-stuffed marker
+            if (marker === 0xDA) { // SOS: jump directly between 0xFF bytes in native C++ code
                 while (pos + 1 < len) {
-                    if (bytes[pos] === 0xFF) {
-                        const next = bytes[pos + 1];
-                        if (next !== 0x00 && !(next >= 0xD0 && next <= 0xD7) && next !== 0xFF) {
-                            if (next === 0xD9) return pos + 2;
-                            break;
-                        }
+                    pos = bytes.indexOf(0xFF, pos);
+                    if (pos === -1 || pos + 1 >= len) return -1;
+                    const next = bytes[pos + 1];
+                    if (next === 0xFF) {
+                        pos++;
+                        continue;
                     }
-                    pos++;
+                    if (next === 0x00 || (next >= 0xD0 && next <= 0xD7)) {
+                        pos += 2;
+                        continue;
+                    }
+                    if (next === 0xD9) return pos + 2;
+                    break;
                 }
             }
         }
@@ -1982,23 +2028,60 @@ document.addEventListener('DOMContentLoaded', () => {
         m === 0xC2 || m === 0xC4 || m === 0xDD || m === 0xFE
     );
 
-    const extractLargestEmbeddedJpeg = async (bytes) => {
+    const findEmbeddedJpegBlobs = (bytes) => {
         const candidates = [];
-        for (let i = 0; i < bytes.length - 4; i++) {
-            if (bytes[i] === 0xFF && bytes[i + 1] === 0xD8 && bytes[i + 2] === 0xFF && isValidPostSoiMarker(bytes[i + 3])) {
+        const limit = bytes.length - 4;
+        let i = 0;
+        while (i < limit) {
+            i = bytes.indexOf(0xFF, i);
+            if (i === -1 || i >= limit) break;
+            if (bytes[i + 1] === 0xD8 && bytes[i + 2] === 0xFF && isValidPostSoiMarker(bytes[i + 3])) {
                 const end = findJpegEndOffset(bytes, i);
                 if (end > i + 1024) {
                     candidates.push({ start: i, end, size: end - i });
-                    i = end - 1;
+                    i = end;
+                    continue;
                 }
             }
+            i++;
         }
         candidates.sort((a, b) => b.size - a.size);
+        return candidates;
+    };
+
+    const extractLargestEmbeddedJpeg = async (bytes) => {
+        const candidates = findEmbeddedJpegBlobs(bytes);
         for (const cand of candidates) {
             try {
                 const blob = new Blob([bytes.subarray(cand.start, cand.end)], { type: 'image/jpeg' });
                 const img = await loadImageFromBlob(blob);
                 return { blob, img };
+            } catch (_) {}
+        }
+        return null;
+    };
+
+    const extractLargestEmbeddedJpegSource = async (bytes) => {
+        const candidates = findEmbeddedJpegBlobs(bytes);
+        for (const cand of candidates) {
+            try {
+                const blob = new Blob([bytes.subarray(cand.start, cand.end)], { type: 'image/jpeg' });
+                const bmp = await tryCreateImageBitmap(blob);
+                if (bmp) {
+                    return {
+                        source: bmp,
+                        width: bmp.width,
+                        height: bmp.height,
+                        close: () => { try { bmp.close(); } catch (_) {} }
+                    };
+                }
+                const img = await loadImageFromBlob(blob);
+                return {
+                    source: img,
+                    width: img.naturalWidth,
+                    height: img.naturalHeight,
+                    close: () => {}
+                };
             } catch (_) {}
         }
         return null;
@@ -2031,7 +2114,245 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    const decodeHeicBlob = async (file) => {
+    const pixelsToImageSource = async ({ width, height, data }) => {
+        const clamped = data instanceof Uint8ClampedArray ? data : new Uint8ClampedArray(data);
+        const imgData = new ImageData(clamped, width, height);
+        const bmp = await tryCreateImageBitmap(imgData);
+        if (bmp) {
+            return {
+                source: bmp,
+                width: bmp.width,
+                height: bmp.height,
+                close: () => { try { bmp.close(); } catch (_) {} }
+            };
+        }
+        const c = document.createElement('canvas');
+        c.width = width;
+        c.height = height;
+        c.getContext('2d').putImageData(imgData, 0, 0);
+        return {
+            source: c,
+            width,
+            height,
+            close: () => { c.width = 0; c.height = 0; }
+        };
+    };
+
+    const pixelsToPngBlob = async (pixels) => {
+        const c = document.createElement('canvas');
+        c.width = pixels.width;
+        c.height = pixels.height;
+        const clamped = pixels.data instanceof Uint8ClampedArray ? pixels.data : new Uint8ClampedArray(pixels.data);
+        c.getContext('2d').putImageData(new ImageData(clamped, pixels.width, pixels.height), 0, 0);
+        return canvasToPngBlob(c);
+    };
+
+    // --- Fast Reusable WASM HEIC/HEIF Decoder (Web Worker + Main-thread + Multi-library Fallbacks) ---
+    const LIBHEIF_URLS = [
+        'https://cdn.jsdelivr.net/npm/libheif-js@1.23.5/libheif-wasm/libheif-bundle.js',
+        'https://unpkg.com/libheif-js@1.23.5/libheif-wasm/libheif-bundle.js'
+    ];
+    let heicWorkerInstance = null;
+    let heicWorkerDisabled = false;
+    let heicWorkerReqId = 1;
+    const heicWorkerPending = new Map();
+    let mainLibheifDecoder = null;
+    let mainLibheifPromise = null;
+
+    const getHeicWorker = () => {
+        if (heicWorkerDisabled || typeof Worker === 'undefined') return null;
+        if (heicWorkerInstance) return heicWorkerInstance;
+        try {
+            const workerSrc = `
+                let decoder = null;
+                let initPromise = null;
+                const URLS = ${JSON.stringify(LIBHEIF_URLS)};
+                function ensureDecoder() {
+                    if (decoder) return Promise.resolve(decoder);
+                    if (!initPromise) {
+                        initPromise = (async () => {
+                            let loaded = false;
+                            for (const url of URLS) {
+                                try {
+                                    importScripts(url);
+                                    loaded = true;
+                                    break;
+                                } catch (_) {}
+                            }
+                            if (!loaded || typeof self.libheif === 'undefined') {
+                                throw new Error('libheif load failed');
+                            }
+                            const mod = typeof self.libheif === 'function' ? await self.libheif() : self.libheif;
+                            decoder = new mod.HeifDecoder();
+                            return decoder;
+                        })();
+                    }
+                    return initPromise;
+                }
+                self.onmessage = async (e) => {
+                    const { id, type, buffer } = e.data || {};
+                    if (type === 'warmup') {
+                        try { await ensureDecoder(); } catch (_) {}
+                        return;
+                    }
+                    try {
+                        const dec = await ensureDecoder();
+                        const bytes = new Uint8Array(buffer);
+                        const images = dec.decode(bytes);
+                        if (!images || images.length === 0) throw new Error('Empty HEIF');
+                        let best = images[0];
+                        let bestArea = best.get_width() * best.get_height();
+                        for (let i = 1; i < images.length; i++) {
+                            const area = images[i].get_width() * images[i].get_height();
+                            if (area > bestArea) {
+                                best = images[i];
+                                bestArea = area;
+                            }
+                        }
+                        const width = best.get_width();
+                        const height = best.get_height();
+                        if (!width || !height) throw new Error('Invalid HEIF size');
+                        const rgba = new Uint8ClampedArray(width * height * 4);
+                        await new Promise((resolve, reject) => {
+                            best.display({ data: rgba, width, height }, (displayData) => {
+                                if (!displayData) reject(new Error('HEIF display failed'));
+                                else resolve();
+                            });
+                        });
+                        for (const img of images) {
+                            try { if (img && typeof img.free === 'function') img.free(); } catch (_) {}
+                        }
+                        self.postMessage({ id, width, height, buffer: rgba.buffer }, [rgba.buffer]);
+                    } catch (err) {
+                        self.postMessage({ id, error: (err && err.message) || 'HEIF decode failed' });
+                    }
+                };
+            `;
+            const blobUrl = URL.createObjectURL(new Blob([workerSrc], { type: 'application/javascript' }));
+            const worker = new Worker(blobUrl);
+            URL.revokeObjectURL(blobUrl);
+            worker.onmessage = (e) => {
+                const { id, width, height, buffer, error } = e.data || {};
+                const job = heicWorkerPending.get(id);
+                if (!job) return;
+                heicWorkerPending.delete(id);
+                if (error) job.reject(new Error(error));
+                else job.resolve({ width, height, data: new Uint8ClampedArray(buffer) });
+            };
+            worker.onerror = (err) => {
+                heicWorkerDisabled = true;
+                heicWorkerInstance = null;
+                for (const [, job] of heicWorkerPending) {
+                    job.reject(new Error('HEIC worker failed'));
+                }
+                heicWorkerPending.clear();
+            };
+            heicWorkerInstance = worker;
+            return worker;
+        } catch (_) {
+            heicWorkerDisabled = true;
+            return null;
+        }
+    };
+
+    const preloadHeicDecoderIfNeeded = (files) => {
+        if (!files || files.length === 0) return;
+        const hasHeic = files.some((f) => f && (HEIC_EXT_REGEX.test(f.name || '') || /heic|heif/i.test(f.type || '')));
+        if (!hasHeic) return;
+        const worker = getHeicWorker();
+        if (worker) {
+            try { worker.postMessage({ type: 'warmup' }); } catch (_) {}
+        }
+    };
+
+    const getMainLibheifDecoder = async () => {
+        if (mainLibheifDecoder) return mainLibheifDecoder;
+        if (!mainLibheifPromise) {
+            mainLibheifPromise = (async () => {
+                if (typeof window.libheif === 'undefined') {
+                    await loadExternalScript(LIBHEIF_URLS);
+                }
+                if (typeof window.libheif === 'undefined') {
+                    throw new Error('libheif unavailable');
+                }
+                const mod = typeof window.libheif === 'function' ? await window.libheif() : window.libheif;
+                mainLibheifDecoder = new mod.HeifDecoder();
+                return mainLibheifDecoder;
+            })();
+        }
+        return mainLibheifPromise;
+    };
+
+    const decodeHeicWithLibheifMain = async (bytes) => {
+        const dec = await getMainLibheifDecoder();
+        const images = dec.decode(bytes);
+        if (!images || images.length === 0) throw new Error('Empty HEIF');
+        try {
+            let best = images[0];
+            let bestArea = best.get_width() * best.get_height();
+            for (let i = 1; i < images.length; i++) {
+                const area = images[i].get_width() * images[i].get_height();
+                if (area > bestArea) {
+                    best = images[i];
+                    bestArea = area;
+                }
+            }
+            const width = best.get_width();
+            const height = best.get_height();
+            if (!width || !height) throw new Error('Invalid HEIF size');
+            const rgba = new Uint8ClampedArray(width * height * 4);
+            await new Promise((resolve, reject) => {
+                best.display({ data: rgba, width, height }, (displayData) => {
+                    if (!displayData) reject(new Error('HEIF display failed'));
+                    else resolve();
+                });
+            });
+            return { width, height, data: rgba };
+        } finally {
+            for (const img of images) {
+                try { if (img && typeof img.free === 'function') img.free(); } catch (_) {}
+            }
+        }
+    };
+
+    const decodeHeicToPixels = async (bytes) => {
+        const worker = getHeicWorker();
+        if (worker) {
+            try {
+                const id = heicWorkerReqId++;
+                // Copy slice into transferable buffer so original bytes remain intact for fallbacks if needed
+                const transferBuf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+                return await new Promise((resolve, reject) => {
+                    heicWorkerPending.set(id, { resolve, reject });
+                    worker.postMessage({ id, buffer: transferBuf }, [transferBuf]);
+                });
+            } catch (_) {}
+        }
+        return await decodeHeicWithLibheifMain(bytes);
+    };
+
+    const decodeHeicWithHeicToOrFallback = async (file, preferBitmap = false) => {
+        try {
+            if (typeof window.HeicTo !== 'function') {
+                await loadExternalScript([
+                    'https://cdn.jsdelivr.net/npm/heic-to@1.6.7/dist/iife/heic-to.js',
+                    'https://unpkg.com/heic-to@1.6.7/dist/iife/heic-to.js'
+                ]);
+            }
+            if (typeof window.HeicTo === 'function') {
+                if (preferBitmap) {
+                    try {
+                        const bmp = await window.HeicTo({ blob: file, type: 'bitmap' });
+                        if (bmp && bmp.width > 0 && bmp.height > 0) {
+                            return { kind: 'bitmap', bitmap: bmp };
+                        }
+                    } catch (_) {}
+                }
+                const blob = await window.HeicTo({ blob: file, type: 'image/png' });
+                return { kind: 'blob', blob };
+            }
+        } catch (_) {}
+
         if (typeof window.heic2any !== 'function') {
             await loadExternalScript([
                 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js',
@@ -2039,17 +2360,60 @@ document.addEventListener('DOMContentLoaded', () => {
             ]);
         }
         if (typeof window.heic2any !== 'function') {
-            throw new Error('heic2any unavailable');
+            throw new Error('HEIC decoder unavailable');
         }
         const converted = await window.heic2any({
             blob: file,
-            toType: 'image/jpeg',
-            quality: 0.96
+            toType: 'image/png'
         });
-        return Array.isArray(converted) ? converted[0] : converted;
+        return { kind: 'blob', blob: Array.isArray(converted) ? converted[0] : converted };
     };
 
-    const decodeTiffBlob = async (bytes) => {
+    const decodeHeicSource = async (file, bytes) => {
+        try {
+            const pixels = await decodeHeicToPixels(bytes);
+            return await pixelsToImageSource(pixels);
+        } catch (_) {
+            const fb = await decodeHeicWithHeicToOrFallback(file, true);
+            if (fb.kind === 'bitmap') {
+                return {
+                    source: fb.bitmap,
+                    width: fb.bitmap.width,
+                    height: fb.bitmap.height,
+                    close: () => { try { fb.bitmap.close(); } catch (_) {} }
+                };
+            }
+            const bmp = await tryCreateImageBitmap(fb.blob);
+            if (bmp) {
+                return {
+                    source: bmp,
+                    width: bmp.width,
+                    height: bmp.height,
+                    close: () => { try { bmp.close(); } catch (_) {} }
+                };
+            }
+            const img = await loadImageFromBlob(fb.blob);
+            return {
+                source: img,
+                width: img.naturalWidth,
+                height: img.naturalHeight,
+                close: () => {}
+            };
+        }
+    };
+
+    const decodeHeicBlob = async (file, bytes) => {
+        try {
+            const rawBytes = bytes || new Uint8Array(await file.arrayBuffer());
+            const pixels = await decodeHeicToPixels(rawBytes);
+            return await pixelsToPngBlob(pixels);
+        } catch (_) {
+            const fb = await decodeHeicWithHeicToOrFallback(file, false);
+            return fb.blob;
+        }
+    };
+
+    const decodeTiffPixels = async (bytes) => {
         if (typeof window.UTIF === 'undefined') {
             await loadExternalScript([
                 'https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.min.js',
@@ -2075,20 +2439,19 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error('Unsupported TIFF IFD');
         }
         const rgba = window.UTIF.toRGBA8(bestIfd);
-        const c = document.createElement('canvas');
-        c.width = bestIfd.width;
-        c.height = bestIfd.height;
-        const ctx = c.getContext('2d');
-        const imgData = new ImageData(new Uint8ClampedArray(rgba), bestIfd.width, bestIfd.height);
-        ctx.putImageData(imgData, 0, 0);
-        return canvasToPngBlob(c);
+        return {
+            width: bestIfd.width,
+            height: bestIfd.height,
+            data: new Uint8ClampedArray(rgba)
+        };
     };
 
-    const decodeTgaBlob = async (bytes) => {
+    const decodeTgaPixels = (bytes) => {
         if (bytes.length < 18) throw new Error('Invalid TGA');
         const idLen = bytes[0];
         const colorMapType = bytes[1];
         const imageType = bytes[2];
+        const cmFirstIdx = bytes[3] | (bytes[4] << 8);
         const cmLength = bytes[5] | (bytes[6] << 8);
         const cmDepth = bytes[7];
         const w = bytes[12] | (bytes[13] << 8);
@@ -2096,40 +2459,56 @@ document.addEventListener('DOMContentLoaded', () => {
         const bpp = bytes[16];
         const desc = bytes[17];
         if (!w || !h || w > 16384 || h > 16384) throw new Error('Invalid TGA dimensions');
-        const isRle = (imageType === 10 || imageType === 11);
+        const isRle = (imageType === 9 || imageType === 10 || imageType === 11);
+        const isMapped = (imageType === 1 || imageType === 9);
         const isRgb = (imageType === 2 || imageType === 10);
         const isGray = (imageType === 3 || imageType === 11);
-        if (!isRgb && !isGray) throw new Error('Unsupported TGA type');
+        if (!isMapped && !isRgb && !isGray) throw new Error('Unsupported TGA type');
 
-        const cmBytes = colorMapType === 1 ? cmLength * Math.ceil(cmDepth / 8) : 0;
-        let offset = 18 + idLen + cmBytes;
+        const cmEntryBytes = Math.ceil(cmDepth / 8);
+        const cmOffset = 18 + idLen;
+        const cmBytes = colorMapType === 1 ? cmLength * cmEntryBytes : 0;
+        let offset = cmOffset + cmBytes;
         const bppBytes = Math.ceil(bpp / 8);
         const totalPixels = w * h;
         const rgba = new Uint8ClampedArray(totalPixels * 4);
+        const topOrigin = (desc & 0x20) !== 0;
 
-        const writePixel = (pxIdx, pOffset) => {
-            const topOrigin = (desc & 0x20) !== 0;
-            const x = pxIdx % w;
-            const yRaw = Math.floor(pxIdx / w);
-            const y = topOrigin ? yRaw : (h - 1 - yRaw);
-            const out = (y * w + x) * 4;
-            if (isGray) {
-                const g = bytes[pOffset];
-                rgba[out] = g;
-                rgba[out + 1] = g;
-                rgba[out + 2] = g;
-                rgba[out + 3] = 255;
-            } else if (bpp === 16) {
-                const v = bytes[pOffset] | (bytes[pOffset + 1] << 8);
+        const writeColorSample = (out, sampleOffset, sampleDepth) => {
+            if (sampleDepth === 16 || sampleDepth === 15) {
+                const v = bytes[sampleOffset] | (bytes[sampleOffset + 1] << 8);
                 rgba[out] = ((v >> 10) & 0x1F) * 255 / 31;
                 rgba[out + 1] = ((v >> 5) & 0x1F) * 255 / 31;
                 rgba[out + 2] = (v & 0x1F) * 255 / 31;
                 rgba[out + 3] = 255;
             } else {
-                rgba[out] = bytes[pOffset + 2];
-                rgba[out + 1] = bytes[pOffset + 1];
-                rgba[out + 2] = bytes[pOffset];
-                rgba[out + 3] = (bpp === 32) ? bytes[pOffset + 3] : 255;
+                rgba[out] = bytes[sampleOffset + 2];
+                rgba[out + 1] = bytes[sampleOffset + 1];
+                rgba[out + 2] = bytes[sampleOffset];
+                rgba[out + 3] = (sampleDepth === 32) ? bytes[sampleOffset + 3] : 255;
+            }
+        };
+
+        const writePixel = (pxIdx, pOffset) => {
+            const x = pxIdx % w;
+            const yRaw = Math.floor(pxIdx / w);
+            const y = topOrigin ? yRaw : (h - 1 - yRaw);
+            const out = (y * w + x) * 4;
+            if (isMapped) {
+                const idx = (bpp === 16 ? (bytes[pOffset] | (bytes[pOffset + 1] << 8)) : bytes[pOffset]) - cmFirstIdx;
+                if (idx >= 0 && idx < cmLength) {
+                    writeColorSample(out, cmOffset + idx * cmEntryBytes, cmDepth);
+                } else {
+                    rgba[out + 3] = 255;
+                }
+            } else if (isGray) {
+                const g = bytes[pOffset];
+                rgba[out] = g;
+                rgba[out + 1] = g;
+                rgba[out + 2] = g;
+                rgba[out + 3] = 255;
+            } else {
+                writeColorSample(out, pOffset, bpp);
             }
         };
 
@@ -2157,16 +2536,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         }
-
-        const c = document.createElement('canvas');
-        c.width = w;
-        c.height = h;
-        const ctx = c.getContext('2d');
-        ctx.putImageData(new ImageData(rgba, w, h), 0, 0);
-        return canvasToPngBlob(c);
+        return { width: w, height: h, data: rgba };
     };
 
-    const decodePnmBlob = async (bytes) => {
+    const decodePnmPixels = (bytes) => {
         let pos = 0;
         const readToken = () => {
             while (pos < bytes.length) {
@@ -2258,12 +2631,240 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        const c = document.createElement('canvas');
-        c.width = w;
-        c.height = h;
-        const ctx = c.getContext('2d');
-        ctx.putImageData(new ImageData(rgba, w, h), 0, 0);
-        return canvasToPngBlob(c);
+        return { width: w, height: h, data: rgba };
+    };
+
+    const decodeQoiPixels = (bytes) => {
+        if (bytes.length < 22 || bytes[0] !== 0x71 || bytes[1] !== 0x6F || bytes[2] !== 0x69 || bytes[3] !== 0x66) {
+            throw new Error('Invalid QOI');
+        }
+        const w = ((bytes[4] << 24) | (bytes[5] << 16) | (bytes[6] << 8) | bytes[7]) >>> 0;
+        const h = ((bytes[8] << 24) | (bytes[9] << 16) | (bytes[10] << 8) | bytes[11]) >>> 0;
+        if (!w || !h || w > 16384 || h > 16384) throw new Error('Invalid QOI dimensions');
+
+        const rgba = new Uint8ClampedArray(w * h * 4);
+        const index = new Uint8Array(64 * 4);
+        let r = 0, g = 0, b = 0, a = 255;
+        let run = 0;
+        let p = 14;
+        const end = bytes.length - 8;
+
+        for (let pxPos = 0; pxPos < rgba.length; pxPos += 4) {
+            if (run > 0) {
+                run--;
+            } else if (p < end) {
+                const b1 = bytes[p++];
+                if (b1 === 0xFE) {
+                    r = bytes[p++]; g = bytes[p++]; b = bytes[p++];
+                } else if (b1 === 0xFF) {
+                    r = bytes[p++]; g = bytes[p++]; b = bytes[p++]; a = bytes[p++];
+                } else if ((b1 & 0xC0) === 0x00) {
+                    const idx = (b1 & 0x3F) * 4;
+                    r = index[idx]; g = index[idx + 1]; b = index[idx + 2]; a = index[idx + 3];
+                } else if ((b1 & 0xC0) === 0x40) {
+                    r = (r + ((b1 >> 4) & 0x03) - 2) & 0xFF;
+                    g = (g + ((b1 >> 2) & 0x03) - 2) & 0xFF;
+                    b = (b + (b1 & 0x03) - 2) & 0xFF;
+                } else if ((b1 & 0xC0) === 0x80) {
+                    const b2 = bytes[p++];
+                    const vg = (b1 & 0x3F) - 32;
+                    r = (r + vg - 8 + ((b2 >> 4) & 0x0F)) & 0xFF;
+                    g = (g + vg) & 0xFF;
+                    b = (b + vg - 8 + (b2 & 0x0F)) & 0xFF;
+                } else {
+                    run = b1 & 0x3F;
+                }
+                const hashIdx = ((r * 3 + g * 5 + b * 7 + a * 11) & 0x3F) * 4;
+                index[hashIdx] = r;
+                index[hashIdx + 1] = g;
+                index[hashIdx + 2] = b;
+                index[hashIdx + 3] = a;
+            }
+            rgba[pxPos] = r;
+            rgba[pxPos + 1] = g;
+            rgba[pxPos + 2] = b;
+            rgba[pxPos + 3] = a;
+        }
+        return { width: w, height: h, data: rgba };
+    };
+
+    const decodeXbmPixels = (bytes) => {
+        const text = new TextDecoder().decode(bytes);
+        const wMatch = text.match(/#define\s+\S+_width\s+(\d+)/);
+        const hMatch = text.match(/#define\s+\S+_height\s+(\d+)/);
+        if (!wMatch || !hMatch) throw new Error('Invalid XBM');
+        const w = parseInt(wMatch[1], 10);
+        const h = parseInt(hMatch[1], 10);
+        if (!w || !h || w > 16384 || h > 16384) throw new Error('Invalid XBM size');
+        const bodyMatch = text.match(/\{([\s\S]*?)\}/);
+        if (!bodyMatch) throw new Error('Invalid XBM data');
+        const hexMatches = bodyMatch[1].match(/0x[0-9a-fA-F]+|\d+/g) || [];
+        const vals = new Uint8Array(hexMatches.map((v) => parseInt(v, v.startsWith('0x') || v.startsWith('0X') ? 16 : 10)));
+        const rowBytes = Math.ceil(w / 8);
+        const rgba = new Uint8ClampedArray(w * h * 4);
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const byteVal = vals[y * rowBytes + (x >> 3)] || 0;
+                const bit = (byteVal >> (x & 7)) & 1;
+                const out = (y * w + x) * 4;
+                const v = bit ? 0 : 255;
+                rgba[out] = v;
+                rgba[out + 1] = v;
+                rgba[out + 2] = v;
+                rgba[out + 3] = bit ? 255 : 0;
+            }
+        }
+        return { width: w, height: h, data: rgba };
+    };
+
+    const decodePsdPixels = async (bytes) => {
+        if (typeof window.agPsd === 'undefined') {
+            await loadExternalScript([
+                'https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js',
+                'https://unpkg.com/ag-psd@31.0.2/dist/bundle.js'
+            ]);
+        }
+        if (typeof window.agPsd === 'undefined' || typeof window.agPsd.readPsd !== 'function') {
+            throw new Error('ag-psd unavailable');
+        }
+        const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        const psd = window.agPsd.readPsd(buf, {
+            skipLayerImageData: true,
+            skipThumbnail: true,
+            useImageData: true
+        });
+        if (psd && psd.imageData && psd.imageData.width && psd.imageData.height) {
+            return {
+                width: psd.imageData.width,
+                height: psd.imageData.height,
+                data: new Uint8ClampedArray(psd.imageData.data)
+            };
+        }
+        if (psd && psd.canvas && psd.canvas.width && psd.canvas.height) {
+            const ctx = psd.canvas.getContext('2d');
+            const imgData = ctx.getImageData(0, 0, psd.canvas.width, psd.canvas.height);
+            psd.canvas.width = 0;
+            psd.canvas.height = 0;
+            return { width: imgData.width, height: imgData.height, data: imgData.data };
+        }
+        throw new Error('PSD has no composite image');
+    };
+
+    // High-speed direct pixel/ImageBitmap source loader for Convert mode (zero intermediate PNG/JPEG roundtrips)
+    const loadConvertSource = async (file) => {
+        const name = (file.name || '').toLowerCase();
+        const isRawExt = RAW_EXT_REGEX.test(name);
+
+        // 1. Native off-main-thread browser decode via createImageBitmap (JPEG, PNG, WebP, AVIF, GIF, BMP, ICO, Safari HEIC/JXL)
+        if (!isRawExt) {
+            const nativeBmp = await tryCreateImageBitmap(file);
+            if (nativeBmp) {
+                return {
+                    source: nativeBmp,
+                    width: nativeBmp.width,
+                    height: nativeBmp.height,
+                    close: () => { try { nativeBmp.close(); } catch (_) {} }
+                };
+            }
+            // Fallback to <img> for SVG/SVGZ where createImageBitmap(Blob) may not be supported directly
+            if (/\.svgz?$/i.test(name) || file.type === 'image/svg+xml') {
+                try {
+                    const svgImg = await loadImageFromBlob(file);
+                    return {
+                        source: svgImg,
+                        width: svgImg.naturalWidth,
+                        height: svgImg.naturalHeight,
+                        close: () => {}
+                    };
+                } catch (_) {}
+            }
+        } else {
+            // For RAW files, try native decode ONLY if Safari gives a real full-res image (not tiny EXIF thumbnail)
+            const nativeBmp = await tryCreateImageBitmap(file);
+            if (nativeBmp) {
+                if (!(file.size > 500000 && Math.max(nativeBmp.width, nativeBmp.height) < 480)) {
+                    return {
+                        source: nativeBmp,
+                        width: nativeBmp.width,
+                        height: nativeBmp.height,
+                        close: () => { try { nativeBmp.close(); } catch (_) {} }
+                    };
+                }
+                nativeBmp.close();
+            }
+        }
+
+        // 2. Inspect binary header for specialized formats
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        const sniff = sniffFormatFromHeader(bytes);
+        const isHeic = HEIC_EXT_REGEX.test(name) || sniff === 'heic' || (file.type && /heic|heif/i.test(file.type));
+        const isTiff = /\.(tif|tiff)$/i.test(name) || (file.type && /tiff/i.test(file.type));
+        const isTga = /\.tga$/i.test(name);
+        const isPnm = /\.(ppm|pgm|pbm|pnm)$/i.test(name) || sniff === 'pnm';
+        const isPsd = /\.(psd|psb)$/i.test(name) || sniff === 'psd';
+        const isQoi = /\.qoi$/i.test(name) || sniff === 'qoi';
+        const isXbm = /\.xbm$/i.test(name) || sniff === 'xbm';
+
+        if (isHeic) {
+            return await decodeHeicSource(file, bytes);
+        }
+
+        if (isQoi) {
+            return await pixelsToImageSource(decodeQoiPixels(bytes));
+        }
+
+        if (isXbm) {
+            return await pixelsToImageSource(decodeXbmPixels(bytes));
+        }
+
+        if (isTga) {
+            return await pixelsToImageSource(decodeTgaPixels(bytes));
+        }
+
+        if (isPnm) {
+            return await pixelsToImageSource(decodePnmPixels(bytes));
+        }
+
+        if (isTiff && !isRawExt) {
+            try {
+                return await pixelsToImageSource(await decodeTiffPixels(bytes));
+            } catch (_) {}
+        }
+
+        if (isPsd) {
+            try {
+                return await pixelsToImageSource(await decodePsdPixels(bytes));
+            } catch (_) {}
+        }
+
+        // Camera RAW (CR3, CR2, NEF, ARW, DNG, RAF, ORF, RW2, etc.) and PSD embedded JPEG preview fallback
+        if (isRawExt || isPsd || sniff === 'raw' || sniff === 'tiff-or-raw') {
+            const extracted = await extractLargestEmbeddedJpegSource(bytes);
+            if (extracted) return extracted;
+        }
+
+        // Uncompressed DNG / TIFF-RAW fallback
+        if (isTiff || sniff === 'tiff-or-raw' || isRawExt) {
+            try {
+                return await pixelsToImageSource(await decodeTiffPixels(bytes));
+            } catch (_) {}
+        }
+
+        // HDR PQ Canon CR3 or ISO-BMFF HEVC preview fallback
+        if (sniff === 'raw' || isRawExt) {
+            try {
+                return await decodeHeicSource(file, bytes);
+            } catch (_) {}
+        }
+
+        // Last resort: try native <img> in case an unusual extension is actually a browser-supported image
+        try {
+            const img = await loadImageFromBlob(file);
+            return { source: img, width: img.naturalWidth, height: img.naturalHeight, close: () => {} };
+        } catch (_) {}
+
+        throw new Error('Unsupported or corrupted image format');
     };
 
     const loadDecodedImageForFile = async (file, onStatus) => {
@@ -2287,27 +2888,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const buf = await file.arrayBuffer();
         const bytes = new Uint8Array(buf);
         const sniff = sniffFormatFromHeader(bytes);
-        const isHeic = /\.(heic|heif|hif)$/i.test(name) || sniff === 'heic' || (file.type && /heic|heif/i.test(file.type));
+        const isHeic = HEIC_EXT_REGEX.test(name) || sniff === 'heic' || (file.type && /heic|heif/i.test(file.type));
         const isTiff = /\.(tif|tiff)$/i.test(name) || (file.type && /tiff/i.test(file.type));
         const isTga = /\.tga$/i.test(name);
         const isPnm = /\.(ppm|pgm|pbm|pnm)$/i.test(name) || sniff === 'pnm';
         const isPsd = /\.(psd|psb)$/i.test(name) || sniff === 'psd';
+        const isQoi = /\.qoi$/i.test(name) || sniff === 'qoi';
+        const isXbm = /\.xbm$/i.test(name) || sniff === 'xbm';
 
         if (isHeic) {
-            if (onStatus) onStatus('HEIC/HEIF画像を変換しています...');
-            const jpegBlob = await decodeHeicBlob(file);
-            decodedBlobCache.set(file, jpegBlob);
-            return await loadImageFromBlob(jpegBlob);
+            if (onStatus) onStatus('HEIC/HEIF画像を読み込んでいます...');
+            const pngBlob = await decodeHeicBlob(file, bytes);
+            decodedBlobCache.set(file, pngBlob);
+            return await loadImageFromBlob(pngBlob);
+        }
+
+        if (isQoi) {
+            const pngBlob = await pixelsToPngBlob(decodeQoiPixels(bytes));
+            decodedBlobCache.set(file, pngBlob);
+            return await loadImageFromBlob(pngBlob);
+        }
+
+        if (isXbm) {
+            const pngBlob = await pixelsToPngBlob(decodeXbmPixels(bytes));
+            decodedBlobCache.set(file, pngBlob);
+            return await loadImageFromBlob(pngBlob);
         }
 
         if (isTga) {
-            const pngBlob = await decodeTgaBlob(bytes);
+            const pngBlob = await pixelsToPngBlob(decodeTgaPixels(bytes));
             decodedBlobCache.set(file, pngBlob);
             return await loadImageFromBlob(pngBlob);
         }
 
         if (isPnm) {
-            const pngBlob = await decodePnmBlob(bytes);
+            const pngBlob = await pixelsToPngBlob(decodePnmPixels(bytes));
             decodedBlobCache.set(file, pngBlob);
             return await loadImageFromBlob(pngBlob);
         }
@@ -2316,7 +2931,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isTiff && !isRawExt) {
             if (onStatus) onStatus('TIFF画像を変換しています...');
             try {
-                const pngBlob = await decodeTiffBlob(bytes);
+                const pngBlob = await pixelsToPngBlob(await decodeTiffPixels(bytes));
+                decodedBlobCache.set(file, pngBlob);
+                return await loadImageFromBlob(pngBlob);
+            } catch (_) {}
+        }
+
+        if (isPsd) {
+            try {
+                const pngBlob = await pixelsToPngBlob(await decodePsdPixels(bytes));
                 decodedBlobCache.set(file, pngBlob);
                 return await loadImageFromBlob(pngBlob);
             } catch (_) {}
@@ -2336,7 +2959,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isTiff || sniff === 'tiff-or-raw' || isRawExt) {
             try {
                 if (onStatus) onStatus('TIFF画像を変換しています...');
-                const pngBlob = await decodeTiffBlob(bytes);
+                const pngBlob = await pixelsToPngBlob(await decodeTiffPixels(bytes));
                 decodedBlobCache.set(file, pngBlob);
                 return await loadImageFromBlob(pngBlob);
             } catch (_) {}
@@ -2345,9 +2968,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Fallback: HDR PQ Canon CR3 or ISO-BMFF containers may carry HEVC preview
         if (sniff === 'raw' || isRawExt) {
             try {
-                const jpegBlob = await decodeHeicBlob(file);
-                decodedBlobCache.set(file, jpegBlob);
-                return await loadImageFromBlob(jpegBlob);
+                const pngBlob = await decodeHeicBlob(file, bytes);
+                decodedBlobCache.set(file, pngBlob);
+                return await loadImageFromBlob(pngBlob);
             } catch (_) {}
         }
 
@@ -2393,6 +3016,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        preloadHeicDecoderIfNeeded(validFiles);
         imageFiles = validFiles;
         currentFileIndex = 0;
         imageStates = validFiles.map(() => createDefaultState());
@@ -3429,6 +4053,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('対応している画像が見つかりませんでした');
             return;
         }
+        preloadHeicDecoderIfNeeded(validFiles);
         clearConvertItems();
         convertItems = validFiles.map(buildConvertItem);
         showView(convertView);
@@ -3446,6 +4071,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('対応している画像が見つかりませんでした');
             return;
         }
+        preloadHeicDecoderIfNeeded(validFiles);
         const added = validFiles.map(buildConvertItem);
         convertItems = convertItems.concat(added);
         renderConvertView();
@@ -3466,11 +4092,35 @@ document.addEventListener('DOMContentLoaded', () => {
         return candidate;
     };
 
-    const encodePureImageToBlob = async (img, format) => {
-        const natW = Math.max(1, img.naturalWidth);
-        const natH = Math.max(1, img.naturalHeight);
-        const MAX_SAFE_PIXELS = 36000000;
-        const MAX_SAFE_DIM = 8192;
+    const isLowSpecDevice = () => {
+        const mem = navigator.deviceMemory;
+        const cores = navigator.hardwareConcurrency;
+        return (typeof mem === 'number' && mem <= 2) || (typeof cores === 'number' && cores <= 2);
+    };
+
+    const encodePureImageToBlob = async (srcObj, format) => {
+        const src = srcObj && srcObj.source ? srcObj.source : srcObj;
+        const natW = Math.max(1, (srcObj && srcObj.width) || src.naturalWidth || src.width || 1);
+        const natH = Math.max(1, (srcObj && srcObj.height) || src.naturalHeight || src.height || 1);
+        const lowSpec = isLowSpecDevice();
+        const MAX_SAFE_PIXELS = lowSpec ? 16000000 : 36000000;
+        const MAX_SAFE_DIM = lowSpec ? 4096 : 8192;
+        const FALLBACK_PIXELS = lowSpec ? 6553600 : 12000000;
+        const FALLBACK_DIM = lowSpec ? 2560 : 3200;
+
+        const drawToContext = (ctx, outW, outH) => {
+            if (format === 'image/jpeg') {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, outW, outH);
+            }
+            if (outW !== natW || outH !== natH) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+            } else {
+                ctx.imageSmoothingEnabled = false;
+            }
+            ctx.drawImage(src, 0, 0, outW, outH);
+        };
 
         const renderAtMaxDim = async (maxDimLimit, maxPixelLimit) => {
             let scale = 1;
@@ -3482,15 +4132,59 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const outW = Math.max(1, Math.round(natW * scale));
             const outH = Math.max(1, Math.round(natH * scale));
+            const ctxOpts = { alpha: format !== 'image/jpeg' };
+            const qArg = (format === 'image/png') ? undefined : EXPORT_QUALITY;
+
+            if (typeof OffscreenCanvas !== 'undefined' && typeof OffscreenCanvas.prototype.convertToBlob === 'function') {
+                let oc = null;
+                try {
+                    oc = new OffscreenCanvas(outW, outH);
+                    const octx = oc.getContext('2d', ctxOpts);
+                    if (octx) {
+                        drawToContext(octx, outW, outH);
+                        const blob = await oc.convertToBlob({ type: format, quality: qArg });
+                        if (blob && blob.size > 0 && (!blob.type || blob.type === format)) {
+                            return { blob, width: outW, height: outH };
+                        }
+                    }
+                } catch (_) {
+                    // Fallback to DOM canvas below
+                } finally {
+                    if (oc) {
+                        oc.width = 0;
+                        oc.height = 0;
+                    }
+                }
+            }
+
             const c = document.createElement('canvas');
             c.width = outW;
             c.height = outH;
-            const ctx = c.getContext('2d');
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(img, 0, 0, outW, outH);
             try {
-                const blob = await encodeCanvasToBlob(c, format, EXPORT_QUALITY, '#ffffff');
+                const ctx = c.getContext('2d', ctxOpts);
+                drawToContext(ctx, outW, outH);
+                const blob = await new Promise((resolve, reject) => {
+                    if (c.toBlob) {
+                        c.toBlob((b) => {
+                            if (b) resolve(b);
+                            else reject(new Error('Canvas encoding failed'));
+                        }, format, qArg);
+                    } else {
+                        try {
+                            const dataUrl = c.toDataURL(format, qArg);
+                            const parts = dataUrl.split(',');
+                            const mimeMatch = parts[0].match(/:(.*?);/);
+                            const mime = mimeMatch ? mimeMatch[1] : format;
+                            const bstr = atob(parts[1]);
+                            let n = bstr.length;
+                            const u8arr = new Uint8Array(n);
+                            while (n--) u8arr[n] = bstr.charCodeAt(n);
+                            resolve(new Blob([u8arr], { type: mime }));
+                        } catch (err) {
+                            reject(err);
+                        }
+                    }
+                });
                 return { blob, width: outW, height: outH };
             } finally {
                 c.width = 0;
@@ -3501,8 +4195,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             return await renderAtMaxDim(MAX_SAFE_DIM, MAX_SAFE_PIXELS);
         } catch (err) {
-            // Fallback for mobile WebKit strict canvas memory caps
-            return await renderAtMaxDim(3200, 12000000);
+            return await renderAtMaxDim(FALLBACK_DIM, FALLBACK_PIXELS);
         }
     };
 
@@ -3517,6 +4210,13 @@ document.addEventListener('DOMContentLoaded', () => {
         let completed = 0;
         let successCount = 0;
         let failCount = 0;
+        let nextIdx = 0;
+        let lastUiYield = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+        const yieldFrame = () => new Promise((r) => {
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(r);
+            else setTimeout(r, 0);
+        });
 
         const usedNames = new Set(
             convertItems
@@ -3535,45 +4235,66 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateProgressUi(0);
         renderConvertView();
+        await yieldFrame();
+        if (sessionId !== convertSessionId) return;
 
-        for (let i = 0; i < targets.length; i++) {
-            if (sessionId !== convertSessionId) return;
-            const item = targets[i];
-            item.status = 'converting';
-            item.errorMsg = '';
-            const rowEl = convertRowMap.get(item.id);
-            if (rowEl) updateConvertRow(rowEl, item);
-            await new Promise((r) => setTimeout(r, 8));
-            if (sessionId !== convertSessionId) return;
+        const concurrency = isLowSpecDevice() ? 1 : Math.min(2, total);
 
-            try {
-                const img = await loadDecodedImageForFile(item.file);
+        const processWorker = async () => {
+            while (nextIdx < total) {
                 if (sessionId !== convertSessionId) return;
+                const i = nextIdx++;
+                const item = targets[i];
+                item.status = 'converting';
+                item.errorMsg = '';
+                const rowEl = convertRowMap.get(item.id);
+                if (rowEl) updateConvertRow(rowEl, item);
 
-                const result = await encodePureImageToBlob(img, convertFormat);
+                let srcObj = null;
+                try {
+                    srcObj = await loadConvertSource(item.file);
+                    if (sessionId !== convertSessionId) return;
+
+                    const result = await encodePureImageToBlob(srcObj, convertFormat);
+                    if (sessionId !== convertSessionId) return;
+
+                    if (item.outputUrl) {
+                        URL.revokeObjectURL(item.outputUrl);
+                        item.outputUrl = null;
+                    }
+                    item.blob = result.blob;
+                    item.outputSize = result.blob.size;
+                    item.width = result.width;
+                    item.height = result.height;
+                    item.outputFilename = buildUniqueConvertFilename(item.file, i, convertFormat, usedNames);
+                    item.status = 'done';
+                    successCount++;
+                } catch (err) {
+                    console.error(err);
+                    item.status = 'error';
+                    item.errorMsg = '失敗';
+                    failCount++;
+                } finally {
+                    if (srcObj && typeof srcObj.close === 'function') {
+                        srcObj.close();
+                    }
+                }
+
                 if (sessionId !== convertSessionId) return;
+                completed++;
+                updateProgressUi(completed);
+                if (rowEl) updateConvertRow(rowEl, item);
+                renderConvertSummaryAndControls();
 
-                if (item.outputUrl) URL.revokeObjectURL(item.outputUrl);
-                item.blob = result.blob;
-                item.outputUrl = URL.createObjectURL(result.blob);
-                item.outputSize = result.blob.size;
-                item.width = result.width;
-                item.height = result.height;
-                item.outputFilename = buildUniqueConvertFilename(item.file, i, convertFormat, usedNames);
-                item.status = 'done';
-                successCount++;
-            } catch (err) {
-                console.error(err);
-                item.status = 'error';
-                item.errorMsg = '失敗';
-                failCount++;
+                const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                if (now - lastUiYield > 28) {
+                    lastUiYield = now;
+                    await yieldFrame();
+                }
             }
+        };
 
-            completed++;
-            updateProgressUi(completed);
-            if (rowEl) updateConvertRow(rowEl, item);
-            renderConvertSummaryAndControls();
-        }
+        await Promise.all(Array.from({ length: concurrency }, processWorker));
 
         if (sessionId !== convertSessionId) return;
         isConverting = false;
